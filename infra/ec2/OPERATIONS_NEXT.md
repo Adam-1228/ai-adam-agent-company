@@ -58,6 +58,7 @@ On EC2, use the safe config helper:
 ```bash
 cd /opt/ai-adam-agent-company/teams/commerce-agent-team
 .venv/bin/python scripts/configure_env.py --openai
+.venv/bin/python scripts/test_llm.py
 .venv/bin/python scripts/run_agents.py --use-llm
 sudo systemctl restart commerce-dashboard.service
 ```

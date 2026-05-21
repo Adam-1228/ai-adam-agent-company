@@ -63,6 +63,27 @@ def extract_openai_text(payload: dict) -> str:
     return "\n".join(chunks).strip()
 
 
+def summarize_http_error(exc: urllib.error.HTTPError) -> str:
+    detail = exc.read().decode("utf-8", errors="replace")
+    try:
+        payload = json.loads(detail)
+    except json.JSONDecodeError:
+        return f"HTTP {exc.code}"
+
+    error = payload.get("error", {}) if isinstance(payload, dict) else {}
+    code = error.get("code") or payload.get("status") or "unknown_error"
+    error_type = error.get("type") or "openai_error"
+    message = error.get("message") or ""
+
+    if code == "invalid_api_key" or "Incorrect API key" in message:
+        return "HTTP 401 invalid_api_key: OpenAI API key was rejected."
+    if exc.code == 429:
+        return f"HTTP 429 {code}: rate limit or quota issue."
+    if exc.code >= 500:
+        return f"HTTP {exc.code} {error_type}: OpenAI service error."
+    return f"HTTP {exc.code} {code}: {error_type}"
+
+
 def complete(agent_id: str, instructions: str, prompt: str, use_llm: bool) -> LLMResult:
     load_dotenv()
     provider, model, temperature = agent_model(agent_id)
@@ -110,7 +131,6 @@ def complete(agent_id: str, instructions: str, prompt: str, use_llm: bool) -> LL
             payload = json.loads(response.read().decode("utf-8"))
         return LLMResult(True, provider, model, extract_openai_text(payload), None)
     except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        return LLMResult(False, provider, model, "", f"HTTP {exc.code}: {detail}")
+        return LLMResult(False, provider, model, "", summarize_http_error(exc))
     except Exception as exc:
         return LLMResult(False, provider, model, "", str(exc))
