@@ -184,6 +184,7 @@ This morning workflow runs:
 - client-ops preflight
 - client-ops mock-vs-real structural check in skip-real mode
 - commerce daily agent run with LLM
+- six-stage commerce growth pipeline
 - commerce run retention cleanup
 
 The existing 6-hour commerce work cycle remains enabled:
@@ -191,6 +192,23 @@ The existing 6-hour commerce work cycle remains enabled:
 ```text
 commerce-agents.timer -> every 6 hours
 ```
+
+The 6-hour cycle now uses:
+
+```text
+teams/commerce-agent-team/scripts/run_commerce_cycle.py --use-llm
+```
+
+It runs the legacy five-agent report and then the six-stage growth pipeline:
+
+1. product discovery
+2. supplier and margin validation
+3. risk and compliance filtering
+4. listing package creation
+5. Coupang/Amazon draft channel package creation
+6. performance tracking record creation
+
+Live publishing is not automatic. Channel packages stop at `adam_approval_required`.
 
 Install or refresh the morning timer on EC2:
 
@@ -210,4 +228,11 @@ Manual smoke run:
 sudo systemctl start ai-company-morning.service
 systemctl status ai-company-morning.service --no-pager -l
 cat /opt/ai-adam-agent-company/teams/commerce-agent-team/runtime/company_morning/latest.json
+```
+
+Growth pipeline artifacts:
+
+```bash
+cat /opt/ai-adam-agent-company/teams/commerce-agent-team/runtime/growth_pipeline/latest.json
+cat /opt/ai-adam-agent-company/teams/commerce-agent-team/reports/latest_growth_pipeline.md
 ```

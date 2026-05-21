@@ -154,7 +154,7 @@ def main() -> int:
         results.append(
             run_step(
                 "commerce daily agent run",
-                [commerce_python, "scripts/run_agents.py", "--use-llm"],
+                [commerce_python, "scripts/run_commerce_cycle.py", "--use-llm"],
                 COMMERCE_ROOT,
                 timeout=600,
             )

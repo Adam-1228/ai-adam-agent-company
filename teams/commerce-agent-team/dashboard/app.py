@@ -27,6 +27,12 @@ CLIENT_OPS_HANDOFFS = RUNTIME / "client_ops_handoffs"
 CLIENT_OPS_LOGS = CLIENT_OPS_ROOT / "logs"
 APPROVALS_PATH = RUNTIME / "approval_decisions.json"
 APPROVAL_LOG = RUNTIME / "approval_log.jsonl"
+REPO_ROOT = ROOT.parents[1]
+ROSTER_PATH = REPO_ROOT / "shared" / "organization" / "agent_roster.json"
+GROWTH_PIPELINE_SUMMARY = RUNTIME / "growth_pipeline" / "latest.json"
+GROWTH_PIPELINE_REPORT = REPORTS / "latest_growth_pipeline.md"
+PIPELINE_APPROVALS_PATH = RUNTIME / "growth_pipeline_approval_decisions.json"
+PIPELINE_APPROVAL_LOG = RUNTIME / "growth_pipeline_approval_log.jsonl"
 
 COMMERCE_AGENTS = [
     ("01_market_scout", "시장 탐색가", "상품 기회 발굴", "수요 신호와 카테고리 후보를 찾습니다."),
@@ -159,6 +165,28 @@ def read_text(path: Path, fallback: str = "") -> str:
     if not path.exists():
         return fallback
     return path.read_text(encoding="utf-8", errors="replace")
+
+
+def read_json_file(path: Path, fallback):
+    if not path.exists():
+        return fallback
+    try:
+        return json.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except json.JSONDecodeError:
+        return fallback
+
+
+def agent_roster() -> list[dict]:
+    payload = read_json_file(ROSTER_PATH, {"agents": []})
+    agents = payload.get("agents", [])
+    return agents if isinstance(agents, list) else []
+
+
+def agent_profile(team: str, agent_id: str) -> dict:
+    for item in agent_roster():
+        if item.get("team") == team and item.get("agent_id") == agent_id:
+            return item
+    return {}
 
 
 def latest_file(directory: Path, pattern: str) -> Path | None:
@@ -453,6 +481,107 @@ def mock_real_report_summary() -> dict[str, str]:
         "skip": skip,
         "tone": tone,
     }
+
+
+def growth_pipeline_summary() -> dict:
+    return read_json_file(
+        GROWTH_PIPELINE_SUMMARY,
+        {
+            "run_id": "없음",
+            "created_at": "아직 실행 기록이 없습니다.",
+            "status": "not_started",
+            "stage_counts": {
+                "discovered": 0,
+                "supplier_checked": 0,
+                "risk_blocked": 0,
+                "listing_drafts": 0,
+                "channel_packages": 0,
+                "approval_required": 0,
+                "performance_trackers": 0,
+                "supplier_evidence_needed": 0,
+            },
+            "approval_required": [],
+            "blocked": [],
+            "opportunities": [],
+        },
+    )
+
+
+def load_pipeline_approvals() -> dict[str, dict]:
+    payload = read_json_file(PIPELINE_APPROVALS_PATH, {})
+    return payload if isinstance(payload, dict) else {}
+
+
+def save_pipeline_approvals(decisions: dict[str, dict]) -> None:
+    RUNTIME.mkdir(parents=True, exist_ok=True)
+    PIPELINE_APPROVALS_PATH.write_text(json.dumps(decisions, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def record_pipeline_approval(approval_id: str, action: str, note: str) -> None:
+    actions = {
+        "approve": "approved_for_manual_publish",
+        "reject": "rejected",
+        "hold": "hold_for_more_evidence",
+    }
+    if action not in actions:
+        raise ValueError("unsupported pipeline approval action")
+    clean_id = Path(approval_id).name
+    summary = growth_pipeline_summary()
+    valid_ids = {str(item.get("approval_id", "")) for item in summary.get("approval_required", [])}
+    if clean_id not in valid_ids:
+        raise ValueError("unknown pipeline approval id")
+
+    decision = {
+        "approval_id": clean_id,
+        "status": actions[action],
+        "note": note.strip()[:1000],
+        "decided_by": "adam_dashboard",
+        "decided_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    decisions = load_pipeline_approvals()
+    decisions[clean_id] = decision
+    save_pipeline_approvals(decisions)
+
+    RUNTIME.mkdir(parents=True, exist_ok=True)
+    with PIPELINE_APPROVAL_LOG.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(decision, ensure_ascii=False))
+        f.write("\n")
+
+
+def pipeline_decision_label(approval_id: str) -> str:
+    decision = load_pipeline_approvals().get(approval_id)
+    if not decision:
+        return "Adam 승인 대기"
+    labels = {
+        "approved_for_manual_publish": "수동 게시 승인",
+        "rejected": "반려",
+        "hold_for_more_evidence": "증빙 보류",
+    }
+    return labels.get(str(decision.get("status", "")), "결정 기록됨")
+
+
+def render_growth_summary_cards() -> str:
+    summary = growth_pipeline_summary()
+    counts = summary.get("stage_counts", {})
+    return f"""
+      <section class="decision-cards">
+        <a class="decision-card" href="/growth-pipeline">
+          <h2>6단계 파이프라인</h2>
+          <div class="metric decision-status">{html.escape(str(summary.get("status", "not_started")))}</div>
+          <p class="muted">{html.escape(str(summary.get("run_id", "없음")))} / {html.escape(str(summary.get("created_at", "")))}</p>
+        </a>
+        <a class="decision-card" href="/growth-pipeline">
+          <h2>게시 승인 대기</h2>
+          <div class="metric">{html.escape(str(counts.get("approval_required", 0)))}</div>
+          <p class="muted">쿠팡/아마존 제출 패키지는 Adam 승인 전 게시되지 않습니다.</p>
+        </a>
+        <a class="decision-card" href="/growth-pipeline">
+          <h2>리스크 차단</h2>
+          <div class="metric">{html.escape(str(counts.get("risk_blocked", 0)))}</div>
+          <p class="muted">인증, IP, 이미지 권리, 마진 문제로 자동 차단된 후보입니다.</p>
+        </a>
+      </section>
+    """
 
 
 def render_approval_summary_cards(latest_run: Path | None, latest_meta: dict) -> str:
@@ -1695,6 +1824,8 @@ def html_page(title: str, body: str) -> str:
     <div class="wrap topbar">
       <h1>{html.escape(title)}</h1>
       <nav>
+        <a href="/growth-pipeline">6단계 파이프라인</a>
+        <a href="/org">직원 직제</a>
         <a href="/">대시보드</a>
         <a href="/approvals">결재 센터</a>
         <a href="/office">AI 에이전트 오피스</a>
@@ -1813,13 +1944,18 @@ def render_office() -> str:
 
 def render_agent_card(team: str, agent_id: str, title: str, role: str, description: str, latest_run: Path | None) -> str:
     state = company_agent_state(team, agent_id, latest_run)
+    profile = agent_profile(team, agent_id)
+    rank = profile.get("rank", "")
+    primary_stage = profile.get("primary_stage", "")
+    display_name = profile.get("display_name", title)
     return f"""
       <section class="card agent-card team-{html.escape(team)}">
         <div class="card-head">
-          <h2>{html.escape(title)}</h2>
+          <h2>{html.escape(str(display_name))}</h2>
           <span class="team-chip">{html.escape(TEAM_LABELS[team])}</span>
         </div>
         <div class="metric">{html.escape(state["outbox"])}</div>
+        <p class="muted">{html.escape(str(rank))} · {html.escape(str(primary_stage))}</p>
         <p class="muted">{html.escape(role)}</p>
         <p class="muted">{html.escape(description)}</p>
         <div class="card-foot">
@@ -1875,6 +2011,7 @@ def render_dashboard() -> str:
 
     approval_cards = render_approval_summary_cards(latest_run, latest_meta)
     approval_panel = render_approval_panel(latest_run, latest_meta)
+    growth_cards = render_growth_summary_cards()
 
     body = f"""
       <section class="grid">
@@ -1894,6 +2031,7 @@ def render_dashboard() -> str:
           <p class="muted">김은보, 박실행, 이용대, 최분석, 정총괄의 운영 기록</p>
         </section>
       </section>
+      {growth_cards}
       {render_team_section("client_ops", CLIENT_OPS_AGENTS, latest_run)}
       {render_team_section("commerce", COMMERCE_AGENTS, latest_run)}
       {approval_cards}
@@ -2037,6 +2175,101 @@ def render_ops_check() -> str:
     return html_page("운영 점검", body)
 
 
+def render_org() -> str:
+    cards = []
+    for item in agent_roster():
+        responsibilities = item.get("responsibilities", [])
+        kpis = item.get("kpi", [])
+        cards.append(
+            f"""
+            <section class="panel">
+              <div class="section-head">
+                <div>
+                  <h2>{html.escape(str(item.get("display_name", "")))} · {html.escape(str(item.get("rank", "")))}</h2>
+                  <p class="muted">{html.escape(str(item.get("title", "")))} / {html.escape(str(item.get("primary_stage", "")))}</p>
+                </div>
+                <span class="badge good">{html.escape(str(item.get("team", "")))}</span>
+              </div>
+              <p>{html.escape(str(item.get("authority", "")))}</p>
+              <h3>담당 업무</h3>
+              <ul>{''.join(f'<li>{html.escape(str(value))}</li>' for value in responsibilities)}</ul>
+              <h3>KPI</h3>
+              <ul>{''.join(f'<li>{html.escape(str(value))}</li>' for value in kpis)}</ul>
+            </section>
+            """
+        )
+    body = f"""
+      <section class="office-hero">
+        <h2>직원 직제와 권한</h2>
+        <p class="muted">10명의 AI 직원은 각자 직급, 역할, KPI를 갖습니다. 실제 게시와 돈이 움직이는 결정은 Adam 승인 후에만 진행됩니다.</p>
+      </section>
+      <div style="display:grid; gap:16px;">{''.join(cards)}</div>
+    """
+    return html_page("직원 직제", body)
+
+
+def render_growth_pipeline() -> str:
+    summary = growth_pipeline_summary()
+    counts = summary.get("stage_counts", {})
+    decisions = load_pipeline_approvals()
+    report = read_text(GROWTH_PIPELINE_REPORT, "아직 6단계 파이프라인 보고서가 없습니다.")
+
+    approval_cards = []
+    for item in summary.get("approval_required", []):
+        approval_id = str(item.get("approval_id", ""))
+        decision = decisions.get(approval_id, {})
+        note = decision.get("note", "")
+        approval_cards.append(
+            f"""
+            <section class="panel approval-panel">
+              <div class="section-head">
+                <div>
+                  <h2>{html.escape(str(item.get("product_name", "")))}</h2>
+                  <p class="muted">{html.escape(str(item.get("summary", "")))}</p>
+                </div>
+                <span class="badge warn">{html.escape(pipeline_decision_label(approval_id))}</span>
+              </div>
+              <form class="approval-form" method="post" action="/pipeline-approval">
+                <input type="hidden" name="approval_id" value="{html.escape(approval_id)}">
+                <label>Adam 메모</label>
+                <textarea name="note" rows="3" placeholder="예: 공급처 증빙 확인 후 수동 게시 승인">{html.escape(str(note))}</textarea>
+                <div class="approval-actions">
+                  <button class="action approve" type="submit" name="action" value="approve">승인</button>
+                  <button class="action reject" type="submit" name="action" value="reject">반려</button>
+                  <button class="action cancel" type="submit" name="action" value="hold">보류</button>
+                </div>
+              </form>
+            </section>
+            """
+        )
+    if not approval_cards:
+        approval_cards.append('<section class="panel"><h2>Adam 승인 대기</h2><p class="muted">현재 승인 대기 상품이 없습니다.</p></section>')
+
+    body = f"""
+      <section class="office-hero">
+        <h2>6단계 커머스 파이프라인</h2>
+        <p class="muted">발굴부터 성과 추적까지 자동으로 산출물을 만들고, 라이브 게시 전에는 Adam 승인 대기 상태로 멈춥니다.</p>
+        <p class="muted">최근 실행: {html.escape(str(summary.get("run_id", "없음")))} / {html.escape(str(summary.get("created_at", "")))}</p>
+      </section>
+      <section class="decision-cards">
+        <section class="decision-card"><h2>상품 발굴</h2><div class="metric">{html.escape(str(counts.get("discovered", 0)))}</div><p class="muted">수요/경쟁 후보</p></section>
+        <section class="decision-card"><h2>공급처 검증</h2><div class="metric">{html.escape(str(counts.get("supplier_checked", 0)))}</div><p class="muted">증빙 필요 {html.escape(str(counts.get("supplier_evidence_needed", 0)))}</p></section>
+        <section class="decision-card"><h2>리스크 차단</h2><div class="metric">{html.escape(str(counts.get("risk_blocked", 0)))}</div><p class="muted">정책/IP/인증 차단</p></section>
+        <section class="decision-card"><h2>채널 패키지</h2><div class="metric">{html.escape(str(counts.get("channel_packages", 0)))}</div><p class="muted">게시 전 초안</p></section>
+      </section>
+      <section class="panels">
+        <section>
+          <div style="display:grid; gap:16px;">{''.join(approval_cards)}</div>
+        </section>
+        <aside class="panel">
+          <h2>파이프라인 보고서</h2>
+          <pre>{html.escape(report)}</pre>
+        </aside>
+      </section>
+    """
+    return html_page("6단계 파이프라인", body)
+
+
 def render_report() -> str:
     report = read_text(REPORTS / "latest_agent_run.md", "최신 에이전트 보고서를 찾지 못했습니다.")
     body = f'<section class="panel"><h2>최신 보고서</h2><pre>{html.escape(report)}</pre></section>'
@@ -2124,6 +2357,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/":
             content = render_dashboard()
+        elif parsed.path == "/growth-pipeline":
+            content = render_growth_pipeline()
+        elif parsed.path == "/org":
+            content = render_org()
         elif parsed.path == "/approvals":
             content = render_approvals()
         elif parsed.path == "/opinions":
@@ -2156,7 +2393,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         parsed = urlparse(self.path)
-        if parsed.path != "/approval":
+        if parsed.path not in {"/approval", "/pipeline-approval"}:
             self.send_error(404)
             return
 
@@ -2166,6 +2403,25 @@ class Handler(BaseHTTPRequestHandler):
         run_id = form.get("run_id", [""])[0]
         action = form.get("action", [""])[0]
         note = form.get("note", [""])[0]
+
+        if parsed.path == "/pipeline-approval":
+            approval_id = form.get("approval_id", [""])[0]
+            try:
+                record_pipeline_approval(approval_id, action, note)
+            except ValueError as exc:
+                body = html_page("파이프라인 승인 오류", f'<section class="panel"><h2>파이프라인 승인 오류</h2><p>{html.escape(str(exc))}</p></section>')
+                encoded = body.encode("utf-8")
+                self.send_response(400)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+                return
+
+            self.send_response(303)
+            self.send_header("Location", "/growth-pipeline")
+            self.end_headers()
+            return
 
         try:
             record_approval(run_id, action, note)
