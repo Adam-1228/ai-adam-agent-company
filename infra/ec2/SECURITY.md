@@ -36,6 +36,15 @@ systemctl status commerce-agents.timer
 sudo ufw status numbered
 ```
 
+Commerce team also has a safe audit helper. It checks environment presence, file
+permissions, tracked secret-like files, service status, disk pressure, and UFW
+rules without printing secret values:
+
+```bash
+cd /opt/ai-adam-agent-company/teams/commerce-agent-team
+.venv/bin/python scripts/ops_audit.py
+```
+
 Current UFW status:
 
 ```text

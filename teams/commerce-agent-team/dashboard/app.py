@@ -18,13 +18,14 @@ WORKFORCE = ROOT / "workforce"
 RUNS = WORKFORCE / "runs"
 RUNTIME = ROOT / "runtime"
 LLM_USAGE_LOG = RUNTIME / "llm_usage.jsonl"
+CLIENT_OPS_HANDOFFS = RUNTIME / "client_ops_handoffs"
 
 AGENTS = [
-    ("01_market_scout", "Market Scout", "Find product opportunities"),
-    ("02_margin_analyst", "Margin Analyst", "Check demand, margin, and competition"),
-    ("03_risk_guardian", "Risk Guardian", "Block compliance, IP, and image-rights risk"),
-    ("04_listing_builder", "Listing Builder", "Draft product titles and listing pages"),
-    ("05_ops_manager", "Ops Manager", "Coordinate final decisions"),
+    ("01_market_scout", "시장 탐색가", "상품 기회 발굴", "수요 신호와 카테고리 후보를 찾습니다."),
+    ("02_margin_analyst", "마진 분석가", "수익성 검토", "원가, 판매가, 경쟁 강도, 리뷰 신호를 계산합니다."),
+    ("03_risk_guardian", "리스크 감시자", "위험 차단", "인증, 지식재산권, 이미지 권리, 반품 리스크를 막습니다."),
+    ("04_listing_builder", "리스팅 작성자", "판매 페이지 초안", "상품명, 상세페이지 구조, FAQ, 금지 표현을 정리합니다."),
+    ("05_ops_manager", "운영 관리자", "최종 판단", "진행/검토/보류 결론과 다음 액션을 조율합니다."),
 ]
 
 
@@ -73,7 +74,7 @@ def env_summary() -> dict[str, str]:
     return {
         "provider": os.getenv("LLM_PROVIDER", "mock") or "mock",
         "base_url": os.getenv("OPENAI_BASE_URL", ""),
-        "dashboard_auth": "on" if os.getenv("DASHBOARD_USERNAME") and os.getenv("DASHBOARD_PASSWORD") else "off",
+        "dashboard_auth": "켜짐" if os.getenv("DASHBOARD_USERNAME") and os.getenv("DASHBOARD_PASSWORD") else "꺼짐",
     }
 
 
@@ -105,21 +106,107 @@ def llm_usage_summary() -> dict[str, str]:
     return {"ok": str(ok), "error": str(error), "tokens": str(tokens), "latest": str(latest)}
 
 
+def handoff_summary() -> dict[str, str]:
+    if not CLIENT_OPS_HANDOFFS.exists():
+        return {"received": "0", "task_log": "없음"}
+    received = len([p for p in CLIENT_OPS_HANDOFFS.glob("*.json") if p.is_file()])
+    task_log = "있음" if (CLIENT_OPS_HANDOFFS / "commerce_tasks.md").exists() else "없음"
+    return {"received": str(received), "task_log": task_log}
+
+
+def agent_run_state(agent_id: str, latest_run: Path | None) -> dict[str, str]:
+    outbox_count = agent_outbox_count(agent_id)
+    if latest_run and (latest_run / f"{agent_id}.md").exists():
+        return {"label": "완료", "tone": "good", "outbox": str(outbox_count)}
+    if outbox_count:
+        return {"label": "기록 있음", "tone": "warn", "outbox": str(outbox_count)}
+    return {"label": "대기", "tone": "muted", "outbox": "0"}
+
+
+def render_agent_flow(latest_run: Path | None) -> str:
+    nodes = []
+    for index, (agent_id, title, role, description) in enumerate(AGENTS, start=1):
+        state = agent_run_state(agent_id, latest_run)
+        nodes.append(
+            f"""
+            <div class="agent-node {html.escape(state["tone"])}">
+              <div class="node-step">{index:02d}</div>
+              <h3>{html.escape(title)}</h3>
+              <p class="node-role">{html.escape(role)}</p>
+              <p class="node-desc">{html.escape(description)}</p>
+              <div class="node-meta">
+                <span class="badge {html.escape(state["tone"])}">{html.escape(state["label"])}</span>
+                <span>산출물 {html.escape(state["outbox"])}개</span>
+              </div>
+            </div>
+            """
+        )
+        if index < len(AGENTS):
+            nodes.append('<div class="flow-arrow" aria-hidden="true">&rarr;</div>')
+
+    return f"""
+      <section class="panel agent-map">
+        <div class="section-head">
+          <div>
+            <h2>에이전트 운영 흐름</h2>
+            <p class="muted">발굴에서 최종 판단까지 5명의 에이전트가 순서대로 산출물을 넘깁니다.</p>
+          </div>
+        </div>
+        <div class="agent-flow">{''.join(nodes)}</div>
+      </section>
+    """
+
+
+def render_security_panel() -> str:
+    env = env_summary()
+    env_file = "있음" if (ROOT / ".env").exists() else "없음"
+    auth_tone = "good" if env["dashboard_auth"] == "켜짐" else "danger"
+    provider_tone = "good" if env["provider"] != "mock" else "warn"
+    return f"""
+      <section class="panel">
+        <h2>보안/운영 체크</h2>
+        <div class="check-row">
+          <span>대시보드 로그인</span>
+          <strong class="badge {auth_tone}">{html.escape(env["dashboard_auth"])}</strong>
+        </div>
+        <div class="check-row">
+          <span>LLM 모드</span>
+          <strong class="badge {provider_tone}">{html.escape(env["provider"])}</strong>
+        </div>
+        <div class="check-row">
+          <span>서버 .env</span>
+          <strong>{env_file}</strong>
+        </div>
+        <div class="check-row">
+          <span>퍼블릭 GitHub</span>
+          <strong>비밀값 제외</strong>
+        </div>
+        <div class="check-row">
+          <span>8080 접근</span>
+          <strong>IP 제한 유지</strong>
+        </div>
+      </section>
+    """
+
+
 def render_health_panel() -> str:
     env = env_summary()
     disk = disk_summary()
     usage = llm_usage_summary()
+    handoff = handoff_summary()
     run_count = len(list_runs())
     return f"""
       <section class="panel">
-        <h2>System Health</h2>
-        <div class="kv"><span>LLM provider</span><strong>{html.escape(env["provider"])}</strong></div>
-        <div class="kv"><span>Dashboard auth</span><strong>{html.escape(env["dashboard_auth"])}</strong></div>
-        <div class="kv"><span>Stored runs</span><strong>{run_count}</strong></div>
-        <div class="kv"><span>Disk used</span><strong>{html.escape(disk["used_pct"])}</strong></div>
-        <div class="kv"><span>Disk free</span><strong>{html.escape(disk["free_gb"])}</strong></div>
-        <div class="kv"><span>LLM ok/errors</span><strong>{html.escape(usage["ok"])}/{html.escape(usage["error"])}</strong></div>
-        <div class="kv"><span>Recent tokens</span><strong>{html.escape(usage["tokens"])}</strong></div>
+        <h2>시스템 상태</h2>
+        <div class="kv"><span>LLM 제공자</span><strong>{html.escape(env["provider"])}</strong></div>
+        <div class="kv"><span>대시보드 인증</span><strong>{html.escape(env["dashboard_auth"])}</strong></div>
+        <div class="kv"><span>저장된 실행</span><strong>{run_count}</strong></div>
+        <div class="kv"><span>수신 handoff</span><strong>{html.escape(handoff["received"])}</strong></div>
+        <div class="kv"><span>handoff 작업 로그</span><strong>{html.escape(handoff["task_log"])}</strong></div>
+        <div class="kv"><span>디스크 사용률</span><strong>{html.escape(disk["used_pct"])}</strong></div>
+        <div class="kv"><span>남은 디스크</span><strong>{html.escape(disk["free_gb"])}</strong></div>
+        <div class="kv"><span>LLM 성공/오류</span><strong>{html.escape(usage["ok"])}/{html.escape(usage["error"])}</strong></div>
+        <div class="kv"><span>최근 토큰</span><strong>{html.escape(usage["tokens"])}</strong></div>
       </section>
     """
 
@@ -147,7 +234,7 @@ def html_page(title: str, body: str) -> str:
       margin: 0;
       background: var(--bg);
       color: var(--text);
-      font-family: Arial, "Segoe UI", sans-serif;
+      font-family: "Segoe UI", "Malgun Gothic", Arial, sans-serif;
       line-height: 1.5;
     }}
     header {{
@@ -193,7 +280,7 @@ def html_page(title: str, body: str) -> str:
     }}
     .grid {{
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
       gap: 12px;
     }}
     .card {{
@@ -207,6 +294,9 @@ def html_page(title: str, body: str) -> str:
       margin: 0 0 8px;
       font-size: 15px;
       letter-spacing: 0;
+    }}
+    .card p {{
+      margin: 0;
     }}
     .metric {{
       font-size: 28px;
@@ -234,6 +324,135 @@ def html_page(title: str, body: str) -> str:
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 16px;
+    }}
+    .section-head {{
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+    }}
+    .section-head h2 {{
+      margin-bottom: 2px;
+    }}
+    .agent-map {{
+      margin-top: 16px;
+    }}
+    .agent-flow {{
+      display: flex;
+      align-items: stretch;
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }}
+    .agent-node {{
+      flex: 1 0 180px;
+      min-width: 180px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfd;
+      padding: 12px;
+      display: grid;
+      grid-template-rows: auto auto auto 1fr auto;
+      gap: 6px;
+    }}
+    .agent-node.good {{
+      border-color: #9bd3c7;
+      background: #f2fbf8;
+    }}
+    .agent-node.warn {{
+      border-color: #e6c98f;
+      background: #fffaf0;
+    }}
+    .agent-node h3 {{
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.35;
+    }}
+    .node-step {{
+      width: 32px;
+      height: 28px;
+      border-radius: 6px;
+      background: #e8f3f1;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }}
+    .node-role {{
+      margin: 0;
+      font-size: 13px;
+      font-weight: 700;
+    }}
+    .node-desc {{
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }}
+    .node-meta {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }}
+    .flow-arrow {{
+      align-self: center;
+      color: var(--muted);
+      font-size: 20px;
+      font-weight: 700;
+      flex: 0 0 auto;
+    }}
+    .badge {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 24px;
+      padding: 0 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      background: #eef2f6;
+      color: var(--muted);
+      white-space: nowrap;
+    }}
+    .badge.good {{
+      background: #dff7ef;
+      color: #047857;
+    }}
+    .badge.warn {{
+      background: #fff0c2;
+      color: #8a5a13;
+    }}
+    .badge.danger {{
+      background: #fde2df;
+      color: var(--danger);
+    }}
+    .badge.muted {{
+      background: #eef2f6;
+      color: var(--muted);
+    }}
+    .check-row {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-top: 1px solid var(--line);
+      padding: 9px 0;
+      font-size: 13px;
+    }}
+    .check-row:first-of-type {{
+      border-top: 0;
+    }}
+    .check-row span {{
+      color: var(--muted);
+    }}
+    .check-row strong {{
+      text-align: right;
     }}
     .run-list {{
       display: grid;
@@ -303,6 +522,17 @@ def html_page(title: str, body: str) -> str:
       .grid {{
         grid-template-columns: 1fr;
       }}
+      .agent-flow {{
+        display: grid;
+        overflow-x: visible;
+      }}
+      .agent-node {{
+        min-width: 0;
+      }}
+      .flow-arrow {{
+        transform: rotate(90deg);
+        justify-self: center;
+      }}
     }}
   </style>
 </head>
@@ -311,9 +541,9 @@ def html_page(title: str, body: str) -> str:
     <div class="wrap topbar">
       <h1>{html.escape(title)}</h1>
       <nav>
-        <a href="/">Dashboard</a>
-        <a href="/report">Latest Report</a>
-        <a href="/runs">Runs</a>
+        <a href="/">대시보드</a>
+        <a href="/report">최신 보고서</a>
+        <a href="/runs">실행 기록</a>
       </nav>
     </div>
   </header>
@@ -324,17 +554,20 @@ def html_page(title: str, body: str) -> str:
 
 def render_dashboard() -> str:
     runs = list_runs()
-    latest_meta = read_run_metadata(runs[0]) if runs else {}
-    latest_report = read_text(REPORTS / "latest_agent_run.md", "No report has been generated yet.")
+    latest_run = runs[0] if runs else None
+    latest_meta = read_run_metadata(latest_run) if latest_run else {}
+    latest_report = read_text(REPORTS / "latest_agent_run.md", "아직 생성된 보고서가 없습니다.")
 
     cards = []
-    for agent_id, title, description in AGENTS:
+    for agent_id, title, role, description in AGENTS:
+        state = agent_run_state(agent_id, latest_run)
         cards.append(
             f"""
             <section class="card">
               <h2>{html.escape(title)}</h2>
-              <div class="metric">{agent_outbox_count(agent_id)}</div>
-              <div class="muted">{html.escape(description)}</div>
+              <div class="metric">{html.escape(state["outbox"])}</div>
+              <p class="muted">{html.escape(role)}</p>
+              <p class="muted">{html.escape(description)}</p>
             </section>
             """
         )
@@ -346,41 +579,43 @@ def render_dashboard() -> str:
         count = meta.get("candidate_count", "?")
         run_items.append(
             f'<a href="/run?id={html.escape(run_dir.name)}"><strong>{html.escape(run_dir.name)}</strong>'
-            f'<br><span class="muted">{html.escape(str(created))} / candidates: {html.escape(str(count))}</span></a>'
+            f'<br><span class="muted">{html.escape(str(created))} / 후보: {html.escape(str(count))}</span></a>'
         )
     if not run_items:
-        run_items.append('<span class="muted">No runs yet.</span>')
+        run_items.append('<span class="muted">아직 실행 기록이 없습니다.</span>')
 
     body = f"""
       <section class="grid">
         <section class="card">
-          <h2>Latest Run</h2>
+          <h2>최신 실행</h2>
           <div class="metric run-id">{html.escape(str(latest_meta.get("run_id", "0")))}</div>
-          <div class="muted">{html.escape(str(latest_meta.get("created_at", "Not started")))}</div>
+          <div class="muted">{html.escape(str(latest_meta.get("created_at", "아직 시작 전")))}</div>
         </section>
         {''.join(cards)}
       </section>
+      {render_agent_flow(latest_run)}
       <section class="panels">
         <aside class="side-stack">
           {render_health_panel()}
+          {render_security_panel()}
           <section class="panel">
-            <h2>Recent Runs</h2>
+            <h2>최근 실행</h2>
             <div class="run-list">{''.join(run_items)}</div>
           </section>
         </aside>
         <section class="panel">
-          <h2>Latest Final Report</h2>
+          <h2>최신 최종 보고서</h2>
           <pre>{html.escape(latest_report)}</pre>
         </section>
       </section>
     """
-    return html_page("Commerce Agent Dashboard", body)
+    return html_page("커머스 에이전트 대시보드", body)
 
 
 def render_report() -> str:
-    report = read_text(REPORTS / "latest_agent_run.md", "No latest agent report found.")
-    body = f'<section class="panel"><h2>Latest Report</h2><pre>{html.escape(report)}</pre></section>'
-    return html_page("Latest Agent Report", body)
+    report = read_text(REPORTS / "latest_agent_run.md", "최신 에이전트 보고서를 찾지 못했습니다.")
+    body = f'<section class="panel"><h2>최신 보고서</h2><pre>{html.escape(report)}</pre></section>'
+    return html_page("최신 에이전트 보고서", body)
 
 
 def render_runs() -> str:
@@ -393,20 +628,20 @@ def render_runs() -> str:
             f' / LLM: {html.escape(str(meta.get("use_llm", False)))}</span></a>'
         )
     if not rows:
-        rows.append('<span class="muted">No runs yet.</span>')
-    body = f'<section class="panel"><h2>Runs</h2><div class="run-list">{"".join(rows)}</div></section>'
-    return html_page("Agent Runs", body)
+        rows.append('<span class="muted">아직 실행 기록이 없습니다.</span>')
+    body = f'<section class="panel"><h2>실행 기록</h2><div class="run-list">{"".join(rows)}</div></section>'
+    return html_page("에이전트 실행 기록", body)
 
 
 def render_run(run_id: str) -> str:
     clean_id = Path(run_id).name
     run_dir = RUNS / clean_id
     if not run_dir.exists() or not run_dir.is_dir():
-        return html_page("Run Not Found", '<section class="panel"><h2>Run Not Found</h2></section>')
+        return html_page("실행 기록 없음", '<section class="panel"><h2>실행 기록을 찾지 못했습니다</h2></section>')
 
     sections = []
-    for agent_id, title, _description in AGENTS:
-        report = read_text(run_dir / f"{agent_id}.md", "No output for this agent.")
+    for agent_id, title, _role, _description in AGENTS:
+        report = read_text(run_dir / f"{agent_id}.md", "이 에이전트의 산출물이 없습니다.")
         sections.append(f'<section class="panel"><h2>{html.escape(title)}</h2><pre>{html.escape(report)}</pre></section>')
     body = '<div style="display:grid; gap:16px;">' + "".join(sections) + "</div>"
     return html_page(clean_id, body)
