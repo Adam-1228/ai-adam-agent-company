@@ -3,6 +3,7 @@
 Current production hardening checklist:
 
 - Restrict dashboard port `8080` to the operator public IP.
+- Remove unused public ports such as `8050`.
 - Keep dashboard Basic Auth enabled through `.env`.
 - Keep `.env`, API keys, `.pem` files, runtime reports, and agent run logs out of Git.
 - Prefer SSH tunnel or a domain with HTTPS before sharing the dashboard with anyone else.
@@ -27,6 +28,14 @@ Useful checks:
 systemctl status commerce-dashboard.service
 systemctl status commerce-agents.timer
 sudo ufw status numbered
+```
+
+Current UFW status:
+
+```text
+8080/tcp ALLOW IN 59.13.218.189
+8080/tcp DENY IN Anywhere
+8050/tcp removed
 ```
 
 ## Updating the Allowed Dashboard IP
