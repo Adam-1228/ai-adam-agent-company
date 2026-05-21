@@ -19,6 +19,58 @@ Client Ops must pass this checklist before handling real customers.
 
 ---
 
+## 자동 점검 매핑 (preflight_check.py)
+
+각 카테고리의 자동화 가능 여부와 자동 점검 명령은 아래와 같다. 마지막 자동 점검 결과는 `reports/preflight_YYYYMMDD.md` (gitignored)에 저장된다.
+
+| § | 카테고리 | 자동화 | 자동 점검 명령 | 보고 위치 |
+| ---: | --- | :---: | --- | --- |
+| §1 | 보안 / 컴플라이언스 | **[AUTO]** | `python scripts/preflight_check.py --section 1` | `reports/preflight_*.md` |
+| §2 | 페르소나 일관성 | **[AUTO]** | `python scripts/preflight_check.py --section 2` | `reports/preflight_*.md` |
+| §3 | 운영 인프라 | **[PARTIAL]** | `python scripts/preflight_check.py --section 3` (EC2/DB는 SKIP_MANUAL) | `reports/preflight_*.md` |
+| §4 | LLM 운영 | **[AUTO]** | `python scripts/preflight_check.py --section 4` | `reports/preflight_*.md` |
+| §5 | 5명 자기소개 시뮬레이션 | **[AUTO]** | `python scripts/preflight_check.py --section 5` (mock 모드) | `reports/preflight_*.md` |
+| §6 | 핸드오프 End-to-End | **[AUTO]** | `python scripts/preflight_check.py --section 6` (7일 시뮬레이션 mock) | `reports/preflight_*.md` |
+| §7 | 컴플레인 시뮬레이션 (9개 트리거) | **[AUTO]** | `python scripts/preflight_check.py --section 7` | `reports/preflight_*.md` |
+| §8 | commerce 인터페이스 정합성 | **[AUTO]** | `python scripts/preflight_check.py --section 8` | `reports/preflight_*.md` |
+| §9 | 모니터링 / 관측성 | **[PARTIAL]** | `python scripts/preflight_check.py --section 9` (Telegram/Slack 채널은 SKIP_MANUAL) | `reports/preflight_*.md` |
+| §10 | 백업 / 복구 | **[MANUAL]** | 분기 1회 시나리오 리허설 (코드 점검 불가) | 운영자 별도 기록 |
+| §11 | 사람 운영 준비 | **[MANUAL]** | 조직 합의 사항 (정총괄 + Adam SLA 등) | 운영자 별도 기록 |
+| §12 | 최종 승인 | **[MANUAL]** | Adam 서명 (본 문서 하단) | 본 문서 하단 |
+
+전체 자동 점검:
+
+```bash
+cd teams/client-ops-team
+python scripts/preflight_check.py
+# exit 0  → 모든 자동화 가능 항목 PASS
+# exit 1  → 하나 이상 FAIL — reports/preflight_*.md 확인
+# exit 2  → 실행 중 예외
+```
+
+특정 섹션만 점검:
+
+```bash
+python scripts/preflight_check.py --section 1,2,7
+```
+
+mock vs real LLM 출력 정합성 비교 (real 호출은 OPENAI_API_KEY 필요, 한 회 ≤ 12 호출):
+
+```bash
+python scripts/compare_mock_vs_real.py --agent all
+python scripts/compare_mock_vs_real.py --agent 03_cs_manager --verbose
+# 출력: reports/mock_vs_real_diff.md (gitignored)
+```
+
+FAIL 경로 동작 검증 (페르소나 파일을 손대지 않고 트리거 list만 일시 비움):
+
+```bash
+python scripts/preflight_check.py --section 7 --simulate-no-triggers
+# 9개 모두 FAIL이 나오는 것을 확인 → 실제 누락 시 검출됨을 보장
+```
+
+---
+
 ## 한국어 상세 — 12개 카테고리 점검
 
 실운영 시작(첫 실제 고객 응대) 전 본 체크리스트의 12개 카테고리 모두 통과해야 한다. 통과 책임자는 정총괄, 최종 승인자는 Adam.
