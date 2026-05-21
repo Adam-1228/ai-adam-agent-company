@@ -16,7 +16,7 @@ SERVICES = [
 ]
 SECRET_PATTERNS = [
     "sk-" + "proj",
-    "-----BEGIN",
+    "-----" + "BEGIN",
 ]
 
 
