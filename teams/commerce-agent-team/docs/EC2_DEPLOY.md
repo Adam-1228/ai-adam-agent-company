@@ -52,15 +52,16 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 ## 3. 수동 실행 확인
 
 ```bash
-python3 scripts/run_pipeline.py
-python3 scripts/run_agents.py
-python3 dashboard/app.py --check
+python3 -m venv .venv
+.venv/bin/python scripts/run_pipeline.py
+.venv/bin/python scripts/run_agents.py
+.venv/bin/python dashboard/app.py --check
 ```
 
 LLM 보강 메모까지 실행하려면:
 
 ```bash
-python3 scripts/run_agents.py --use-llm
+.venv/bin/python scripts/run_agents.py --use-llm
 ```
 
 ## 4. 대시보드 실행
@@ -68,13 +69,13 @@ python3 scripts/run_agents.py --use-llm
 로컬 서버 내부에서만 확인:
 
 ```bash
-python3 dashboard/app.py --host 127.0.0.1 --port 8080
+.venv/bin/python dashboard/app.py --host 127.0.0.1 --port 8080
 ```
 
 외부 접속을 열 때:
 
 ```bash
-python3 dashboard/app.py --host 0.0.0.0 --port 8080
+.venv/bin/python dashboard/app.py --host 0.0.0.0 --port 8080
 ```
 
 EC2 보안 그룹에서 8080 포트는 본인 IP만 허용하는 것을 권장합니다. 더 안전한 방식은 SSH 터널입니다.
