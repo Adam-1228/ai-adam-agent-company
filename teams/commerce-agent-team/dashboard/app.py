@@ -14,22 +14,45 @@ from urllib.parse import parse_qs, urlparse
 
 
 ROOT = Path(__file__).resolve().parents[1]
+CLIENT_OPS_ROOT = ROOT.parent / "client-ops-team"
 REPORTS = ROOT / "reports"
 WORKFORCE = ROOT / "workforce"
 RUNS = WORKFORCE / "runs"
 RUNTIME = ROOT / "runtime"
 LLM_USAGE_LOG = RUNTIME / "llm_usage.jsonl"
 CLIENT_OPS_HANDOFFS = RUNTIME / "client_ops_handoffs"
+CLIENT_OPS_LOGS = CLIENT_OPS_ROOT / "logs"
 APPROVALS_PATH = RUNTIME / "approval_decisions.json"
 APPROVAL_LOG = RUNTIME / "approval_log.jsonl"
 
-AGENTS = [
+COMMERCE_AGENTS = [
     ("01_market_scout", "시장 탐색가", "상품 기회 발굴", "수요 신호와 카테고리 후보를 찾습니다."),
     ("02_margin_analyst", "마진 분석가", "수익성 검토", "원가, 판매가, 경쟁 강도, 리뷰 신호를 계산합니다."),
     ("03_risk_guardian", "리스크 감시자", "위험 차단", "인증, 지식재산권, 이미지 권리, 반품 리스크를 막습니다."),
     ("04_listing_builder", "리스팅 작성자", "판매 페이지 초안", "상품명, 상세페이지 구조, FAQ, 금지 표현을 정리합니다."),
     ("05_ops_manager", "운영 관리자", "최종 판단", "진행/검토/보류 결론과 다음 액션을 조율합니다."),
 ]
+
+CLIENT_OPS_AGENTS = [
+    ("01_onboarding_manager", "김은보", "온보딩 매니저", "신규 고객 정보 수집, 계약/권한 확인, 셋업 검수 handoff를 맡습니다."),
+    ("02_ops_operator", "박실행", "운영 오퍼레이터", "정기 자동화 실행, 로그 기록, 실패 재시도와 알림을 담당합니다."),
+    ("03_cs_manager", "이용대", "CS 매니저", "고객 문의 1차 응대, 응대 초안, 에스컬레이션 판단을 맡습니다."),
+    ("04_data_analyst", "최분석", "데이터 애널리스트", "주간 성과 분석, KPI 비교, 리포트 초안을 작성합니다."),
+    ("05_coordinator_qa", "정총괄", "코디네이터 / QA", "4명의 산출물 검수, 일정 조율, 오류 모니터링을 총괄합니다."),
+]
+
+AGENTS = COMMERCE_AGENTS
+COMPANY_AGENTS = [
+    ("commerce", agent_id, title, role, description)
+    for agent_id, title, role, description in COMMERCE_AGENTS
+] + [
+    ("client_ops", agent_id, title, role, description)
+    for agent_id, title, role, description in CLIENT_OPS_AGENTS
+]
+TEAM_LABELS = {
+    "commerce": "커머스 발굴 검수팀",
+    "client_ops": "클라이언트 운영팀",
+}
 
 OFFICE_LAYOUT = {
     "01_market_scout": {
@@ -66,6 +89,41 @@ OFFICE_LAYOUT = {
         "desk": "approval",
         "status": "승인대기",
         "focus": "최종 판단과 다음 액션",
+    },
+    "01_onboarding_manager": {
+        "room": "온보딩룸",
+        "area": "onboarding",
+        "desk": "approval",
+        "status": "셋업검수",
+        "focus": "고객 정보와 권한 확인",
+    },
+    "02_ops_operator": {
+        "room": "자동화실",
+        "area": "operator",
+        "desk": "numbers",
+        "status": "정시실행",
+        "focus": "예약 작업과 실패 재시도",
+    },
+    "03_cs_manager": {
+        "room": "CS룸",
+        "area": "cs",
+        "desk": "copy",
+        "status": "응대검토",
+        "focus": "문의 초안과 에스컬레이션",
+    },
+    "04_data_analyst": {
+        "room": "리포트실",
+        "area": "data",
+        "desk": "numbers",
+        "status": "분석중",
+        "focus": "KPI와 주간 리포트",
+    },
+    "05_coordinator_qa": {
+        "room": "QA 총괄실",
+        "area": "qa",
+        "desk": "risk",
+        "status": "최종검수",
+        "focus": "산출물 검수와 일정 조율",
     },
 }
 
@@ -153,6 +211,43 @@ def handoff_summary() -> dict[str, str]:
     received = len([p for p in CLIENT_OPS_HANDOFFS.glob("*.json") if p.is_file()])
     task_log = "있음" if (CLIENT_OPS_HANDOFFS / "commerce_tasks.md").exists() else "없음"
     return {"received": str(received), "task_log": task_log}
+
+
+def client_ops_log_events() -> list[dict]:
+    if not CLIENT_OPS_LOGS.exists():
+        return []
+
+    events = []
+    for path in sorted(CLIENT_OPS_LOGS.glob("*.jsonl")):
+        if not path.is_file():
+            continue
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(event, dict):
+                events.append(event)
+    return events[-500:]
+
+
+def client_ops_agent_events(agent_id: str) -> list[dict]:
+    return [event for event in client_ops_log_events() if event.get("agent_id") == agent_id]
+
+
+def client_ops_activity_count(agent_id: str) -> int:
+    return len(client_ops_agent_events(agent_id))
+
+
+def client_ops_event_tone(event: dict | None) -> str:
+    if not event:
+        return "muted"
+    text = f"{event.get('decision', '')} {event.get('summary', '')}".upper()
+    if any(keyword in text for keyword in ("FAIL", "ERROR", "BLOCK", "ESCALATION", "P0", "REJECT")):
+        return "danger"
+    if any(keyword in text for keyword in ("READY", "REVIEW", "IN_PROGRESS", "WAIT", "PENDING")):
+        return "warn"
+    return "good"
 
 
 def load_approval_decisions() -> dict[str, dict]:
@@ -245,14 +340,62 @@ def agent_opinion_summary(agent_id: str, run_dir: Path | None) -> str:
     return summary[:180] + ("..." if len(summary) > 180 else "")
 
 
+def company_agent_state(team: str, agent_id: str, latest_run: Path | None) -> dict[str, str]:
+    if team == "commerce":
+        state = agent_run_state(agent_id, latest_run)
+        return {**state, "unit": "산출물"}
+
+    events = client_ops_agent_events(agent_id)
+    if not events:
+        return {"label": "대기", "tone": "muted", "outbox": "0", "unit": "로그"}
+
+    latest_event = events[-1]
+    label = str(latest_event.get("decision") or latest_event.get("step") or "활동")
+    return {
+        "label": label[:18],
+        "tone": client_ops_event_tone(latest_event),
+        "outbox": str(len(events)),
+        "unit": "로그",
+    }
+
+
+def company_agent_opinion_summary(team: str, agent_id: str, latest_run: Path | None) -> str:
+    if team == "commerce":
+        return agent_opinion_summary(agent_id, latest_run)
+
+    events = client_ops_agent_events(agent_id)
+    if not events:
+        return "운영 로그는 아직 없지만 페르소나, 업무 범위, 출력 템플릿은 준비되어 있습니다."
+
+    latest_event = events[-1]
+    decision = str(latest_event.get("decision") or "활동")
+    summary = str(latest_event.get("summary") or "최근 활동 요약이 없습니다.")
+    text = f"{decision}: {summary}"
+    return text[:180] + ("..." if len(text) > 180 else "")
+
+
+def client_ops_agent_report(agent_id: str) -> str:
+    events = client_ops_agent_events(agent_id)
+    if not events:
+        return "아직 운영 로그가 없습니다. 페르소나와 업무 템플릿은 준비되어 있습니다."
+
+    lines = []
+    for event in events[-8:]:
+        day = event.get("day", "-")
+        step = event.get("step", "unknown-step")
+        decision = event.get("decision", "unknown")
+        summary = event.get("summary", "")
+        provider = (event.get("llm") or {}).get("provider", "unknown")
+        lines.append(f"- Day {day} / {step} / {decision} / {provider}\n  {summary}")
+    return "\n".join(lines)
+
+
 def render_approval_summary_cards(latest_run: Path | None, latest_meta: dict) -> str:
     run_id = str(latest_meta.get("run_id", latest_run.name if latest_run else ""))
     decision = approval_for_run(run_id) if run_id else {}
     status = str(decision.get("status", "pending" if latest_run else "canceled"))
     pending_count = "1" if latest_run and status == "pending" else "0"
-    opinions_count = "0"
-    if latest_run:
-        opinions_count = str(sum(1 for agent_id, *_rest in AGENTS if (latest_run / f"{agent_id}.md").exists()))
+    opinions_count = str(len(COMPANY_AGENTS))
     latest_decision = latest_approval_decision()
     latest_label = latest_decision.get("label", "기록 없음")
     latest_time = latest_decision.get("decided_at", "아직 결재 기록이 없습니다.")
@@ -327,13 +470,13 @@ def render_approval_panel(latest_run: Path | None, latest_meta: dict) -> str:
 
 def render_opinion_cards(latest_run: Path | None) -> str:
     cards = []
-    for agent_id, title, role, _description in AGENTS:
-        summary = agent_opinion_summary(agent_id, latest_run)
+    for team, agent_id, title, role, _description in COMPANY_AGENTS:
+        summary = company_agent_opinion_summary(team, agent_id, latest_run)
         cards.append(
             f"""
             <article class="opinion-card">
               <h3>{html.escape(title)}</h3>
-              <p class="muted">{html.escape(role)}</p>
+              <p class="muted">{html.escape(TEAM_LABELS[team])} · {html.escape(role)}</p>
               <p>{html.escape(summary)}</p>
             </article>
             """
@@ -350,10 +493,10 @@ def agent_run_state(agent_id: str, latest_run: Path | None) -> dict[str, str]:
     return {"label": "대기", "tone": "muted", "outbox": "0"}
 
 
-def render_agent_flow(latest_run: Path | None) -> str:
+def render_flow_nodes(team: str, agents: list[tuple[str, str, str, str]], latest_run: Path | None) -> str:
     nodes = []
-    for index, (agent_id, title, role, description) in enumerate(AGENTS, start=1):
-        state = agent_run_state(agent_id, latest_run)
+    for index, (agent_id, title, role, description) in enumerate(agents, start=1):
+        state = company_agent_state(team, agent_id, latest_run)
         nodes.append(
             f"""
             <div class="agent-node {html.escape(state["tone"])}">
@@ -363,23 +506,42 @@ def render_agent_flow(latest_run: Path | None) -> str:
               <p class="node-desc">{html.escape(description)}</p>
               <div class="node-meta">
                 <span class="badge {html.escape(state["tone"])}">{html.escape(state["label"])}</span>
-                <span>산출물 {html.escape(state["outbox"])}개</span>
+                <span>{html.escape(state["unit"])} {html.escape(state["outbox"])}개</span>
               </div>
             </div>
             """
         )
-        if index < len(AGENTS):
+        if index < len(agents):
             nodes.append('<div class="flow-arrow" aria-hidden="true">&rarr;</div>')
+    return "".join(nodes)
+
+
+def render_agent_flow(latest_run: Path | None) -> str:
+    client_nodes = render_flow_nodes("client_ops", CLIENT_OPS_AGENTS, latest_run)
+    commerce_nodes = render_flow_nodes("commerce", COMMERCE_AGENTS, latest_run)
 
     return f"""
       <section class="panel agent-map">
         <div class="section-head">
           <div>
             <h2>에이전트 운영 흐름</h2>
-            <p class="muted">발굴에서 최종 판단까지 5명의 에이전트가 순서대로 산출물을 넘깁니다.</p>
+            <p class="muted">클라이언트 운영팀 5명과 커머스 발굴 검수팀 5명이 각각의 업무 흐름을 맡습니다.</p>
           </div>
         </div>
-        <div class="agent-flow">{''.join(nodes)}</div>
+        <div class="flow-lane">
+          <div class="flow-lane-head">
+            <strong>클라이언트 운영팀</strong>
+            <span class="muted">고객 온보딩, 자동화 실행, CS, 리포트, QA</span>
+          </div>
+          <div class="agent-flow">{client_nodes}</div>
+        </div>
+        <div class="flow-lane">
+          <div class="flow-lane-head">
+            <strong>커머스 발굴 검수팀</strong>
+            <span class="muted">상품 발굴, 마진 분석, 리스크 차단, 리스팅, 최종 판단</span>
+          </div>
+          <div class="agent-flow">{commerce_nodes}</div>
+        </div>
       </section>
     """
 
@@ -422,12 +584,15 @@ def render_health_panel() -> str:
     usage = llm_usage_summary()
     handoff = handoff_summary()
     run_count = len(list_runs())
+    client_log_count = sum(client_ops_activity_count(agent_id) for agent_id, *_rest in CLIENT_OPS_AGENTS)
     return f"""
       <section class="panel">
         <h2>시스템 상태</h2>
         <div class="kv"><span>LLM 제공자</span><strong>{html.escape(env["provider"])}</strong></div>
         <div class="kv"><span>대시보드 인증</span><strong>{html.escape(env["dashboard_auth"])}</strong></div>
+        <div class="kv"><span>등록 직원</span><strong>{len(COMPANY_AGENTS)}</strong></div>
         <div class="kv"><span>저장된 실행</span><strong>{run_count}</strong></div>
+        <div class="kv"><span>Client Ops 로그</span><strong>{client_log_count}</strong></div>
         <div class="kv"><span>수신 handoff</span><strong>{html.escape(handoff["received"])}</strong></div>
         <div class="kv"><span>handoff 작업 로그</span><strong>{html.escape(handoff["task_log"])}</strong></div>
         <div class="kv"><span>디스크 사용률</span><strong>{html.escape(disk["used_pct"])}</strong></div>
@@ -525,6 +690,53 @@ def html_page(title: str, body: str) -> str:
     .card p {{
       margin: 0;
     }}
+    .muted,
+    .card p,
+    .team-heading p,
+    .node-desc,
+    .office-status span {{
+      overflow-wrap: anywhere;
+    }}
+    .card-head {{
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }}
+    .card-head h2 {{
+      margin-bottom: 0;
+    }}
+    .team-chip {{
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 0 7px;
+      border-radius: 999px;
+      background: #eef7f5;
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }}
+    .agent-card {{
+      display: grid;
+      grid-template-rows: auto auto auto 1fr auto;
+      gap: 6px;
+      min-height: 190px;
+    }}
+    .team-client_ops .team-chip {{
+      background: #eef2fb;
+      color: #365f91;
+    }}
+    .card-foot {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 6px;
+      font-size: 12px;
+    }}
     .metric {{
       font-size: 28px;
       font-weight: 700;
@@ -561,6 +773,39 @@ def html_page(title: str, body: str) -> str:
     }}
     .approval-panel {{
       margin-top: 16px;
+    }}
+    .team-section {{
+      margin-top: 16px;
+    }}
+    .team-heading {{
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }}
+    .team-heading h2 {{
+      margin: 0 0 2px;
+      font-size: 17px;
+    }}
+    .team-heading p {{
+      margin: 0;
+    }}
+    .team-count {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 46px;
+      min-height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--accent);
+      font-weight: 700;
+      white-space: nowrap;
+    }}
+    .team-grid {{
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
     }}
     .approval-body {{
       display: grid;
@@ -675,6 +920,24 @@ def html_page(title: str, body: str) -> str:
       overflow-x: auto;
       padding-bottom: 2px;
     }}
+    .flow-lane {{
+      display: grid;
+      gap: 10px;
+    }}
+    .flow-lane + .flow-lane {{
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+    }}
+    .flow-lane-head {{
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+    }}
+    .flow-lane-head strong {{
+      font-size: 14px;
+    }}
     .agent-node {{
       flex: 1 0 180px;
       min-width: 180px;
@@ -693,6 +956,13 @@ def html_page(title: str, body: str) -> str:
     .agent-node.warn {{
       border-color: #e6c98f;
       background: #fffaf0;
+    }}
+    .agent-node.danger {{
+      border-color: #efa7a0;
+      background: #fff5f4;
+    }}
+    .agent-node.muted {{
+      background: #f7f9fb;
     }}
     .agent-node h3 {{
       margin: 0;
@@ -849,6 +1119,15 @@ def html_page(title: str, body: str) -> str:
       padding: 14px;
       overflow: hidden;
     }}
+    .office-wing-title {{
+      margin: 2px 2px 10px;
+      color: #41505f;
+      font-size: 14px;
+      font-weight: 700;
+    }}
+    .office-wing-title + .office-floor {{
+      margin-bottom: 18px;
+    }}
     .office-floor {{
       position: relative;
       min-height: 620px;
@@ -869,6 +1148,12 @@ def html_page(title: str, body: str) -> str:
         #dfe7ed;
       background-size: 32px 32px;
     }}
+    .office-floor.client-wing {{
+      grid-template-areas:
+        "onboarding operator cs"
+        "hall hall hall"
+        "data qa client";
+    }}
     .office-room {{
       position: relative;
       min-height: 220px;
@@ -886,6 +1171,11 @@ def html_page(title: str, body: str) -> str:
     .room-client {{ grid-area: client; background-color: #eef2fb; }}
     .room-listing {{ grid-area: listing; background-color: #f1eef8; }}
     .room-ops {{ grid-area: ops; background-color: #edf3f7; }}
+    .room-onboarding {{ grid-area: onboarding; background-color: #eef8f4; }}
+    .room-operator {{ grid-area: operator; background-color: #f6f2e6; }}
+    .room-cs {{ grid-area: cs; background-color: #eef3fb; }}
+    .room-data {{ grid-area: data; background-color: #f3f0e9; }}
+    .room-qa {{ grid-area: qa; background-color: #f3ecec; }}
     .room-label {{
       position: absolute;
       top: 7px;
@@ -1032,6 +1322,11 @@ def html_page(title: str, body: str) -> str:
     .avatar.risk::after {{ background: #8a3d45; }}
     .avatar.listing::after {{ background: #6d5ba6; }}
     .avatar.ops::after {{ background: #375f7d; }}
+    .avatar.onboarding::after {{ background: #2f7d64; }}
+    .avatar.operator::after {{ background: #6f5a35; }}
+    .avatar.cs::after {{ background: #365f91; }}
+    .avatar.data::after {{ background: #795548; }}
+    .avatar.qa::after {{ background: #8a3d45; }}
     .office-status {{
       position: absolute;
       left: 18px;
@@ -1121,6 +1416,13 @@ def html_page(title: str, body: str) -> str:
           "hall hall"
           "client ops";
       }}
+      .office-floor.client-wing {{
+        grid-template-areas:
+          "onboarding operator"
+          "cs data"
+          "hall hall"
+          "qa client";
+      }}
       @keyframes handoffMove {{
         0%, 100% {{ transform: translateX(0); }}
         50% {{ transform: translateX(420px); }}
@@ -1150,6 +1452,24 @@ def html_page(title: str, body: str) -> str:
       .grid {{
         grid-template-columns: 1fr;
       }}
+      .card-head,
+      .card-foot,
+      .team-heading,
+      .flow-lane-head,
+      .node-meta {{
+        align-items: flex-start;
+        flex-direction: column;
+      }}
+      .team-chip,
+      .node-meta {{
+        white-space: normal;
+      }}
+      .card,
+      .agent-node,
+      .opinion-card,
+      .team-heading {{
+        overflow-wrap: anywhere;
+      }}
       .agent-flow {{
         display: grid;
         overflow-x: visible;
@@ -1173,6 +1493,16 @@ def html_page(title: str, body: str) -> str:
           "risk"
           "listing"
           "ops"
+          "client"
+          "hall";
+      }}
+      .office-floor.client-wing {{
+        grid-template-areas:
+          "onboarding"
+          "operator"
+          "cs"
+          "data"
+          "qa"
           "client"
           "hall";
       }}
@@ -1233,9 +1563,9 @@ def html_page(title: str, body: str) -> str:
 </html>"""
 
 
-def render_office_room(agent_id: str, title: str, role: str, description: str, latest_run: Path | None) -> str:
+def render_office_room(team: str, agent_id: str, title: str, role: str, description: str, latest_run: Path | None) -> str:
     layout = OFFICE_LAYOUT[agent_id]
-    state = agent_run_state(agent_id, latest_run)
+    state = company_agent_state(team, agent_id, latest_run)
     desk_class = html.escape(layout["desk"])
     area_class = html.escape(layout["area"])
     return f"""
@@ -1249,7 +1579,7 @@ def render_office_room(agent_id: str, title: str, role: str, description: str, l
           <strong>{html.escape(layout["status"])} · {html.escape(title)}</strong>
           <span>{html.escape(role)}</span>
           <span>{html.escape(layout["focus"])}</span>
-          <span>산출물 {html.escape(state["outbox"])}개</span>
+          <span>{html.escape(state["unit"])} {html.escape(state["outbox"])}개</span>
         </div>
         <div class="office-desk desk-{desk_class}">
           <div class="monitor"></div>
@@ -1272,15 +1602,13 @@ def render_client_room() -> str:
         <div class="window"></div>
         <div class="office-status">
           <strong>외부 팀 handoff</strong>
-          <span>클로드 팀의 신호를 commerce 팀으로 넘기는 입구입니다.</span>
-          <span>수신 {html.escape(handoff["received"])}건</span>
-          <span>작업 로그 {html.escape(handoff["task_log"])}</span>
+          <span>commerce 팀으로 넘기는 검수 입구</span>
+          <span>수신 {html.escape(handoff["received"])}건 · 작업 로그 {html.escape(handoff["task_log"])}</span>
         </div>
         <div class="office-desk">
           <div class="monitor"></div>
           <div class="desk-paper"></div>
         </div>
-        <div class="avatar ops" aria-hidden="true"></div>
       </section>
     """
 
@@ -1289,40 +1617,101 @@ def render_office() -> str:
     runs = list_runs()
     latest_run = runs[0] if runs else None
     latest_meta = read_run_metadata(latest_run) if latest_run else {}
-    rooms = [
-        render_office_room(agent_id, title, role, description, latest_run)
+    commerce_rooms = [
+        render_office_room("commerce", agent_id, title, role, description, latest_run)
         for agent_id, title, role, description in AGENTS
+    ]
+    client_rooms = [
+        render_office_room("client_ops", agent_id, title, role, description, latest_run)
+        for agent_id, title, role, description in CLIENT_OPS_AGENTS
     ]
     body = f"""
       <section class="office-hero">
         <h2>AI 에이전트 오피스</h2>
         <p class="muted">
-          커머스 에이전트들이 어떤 방에서 어떤 업무를 맡는지 한눈에 보는 시각화 화면입니다.
+          10명의 AI 직원이 어떤 방에서 어떤 업무를 맡는지 한눈에 보는 시각화 화면입니다.
           운영 상태를 설명하거나, 자동화 회사를 제품처럼 보여줄 때 사용할 수 있습니다.
         </p>
         <p class="muted">최신 실행: {html.escape(str(latest_meta.get("run_id", "아직 없음")))}</p>
       </section>
       <section class="office-shell">
+        <div class="office-wing-title">클라이언트 운영팀</div>
+        <div class="office-floor client-wing">
+          {client_rooms[0]}
+          {client_rooms[1]}
+          {client_rooms[2]}
+          <div class="hallway">
+            <div class="handoff-doc" aria-hidden="true"></div>
+            Client Ops Control Hall
+          </div>
+          {client_rooms[3]}
+          {client_rooms[4]}
+          {render_client_room()}
+        </div>
+        <div class="office-wing-title">커머스 발굴 검수팀</div>
         <div class="office-floor">
-          {rooms[0]}
-          {rooms[1]}
-          {rooms[2]}
+          {commerce_rooms[0]}
+          {commerce_rooms[1]}
+          {commerce_rooms[2]}
           <div class="hallway">
             <div class="handoff-doc" aria-hidden="true"></div>
             Commerce Handoff Hall
           </div>
           {render_client_room()}
-          {rooms[3]}
-          {rooms[4]}
+          {commerce_rooms[3]}
+          {commerce_rooms[4]}
         </div>
       </section>
       <section class="office-legend">
-        <div class="legend-item"><strong>초록 배지</strong><span class="muted">최근 실행에서 산출물이 확인된 에이전트입니다.</span></div>
+        <div class="legend-item"><strong>초록 배지</strong><span class="muted">최근 산출물이나 운영 로그가 확인된 직원입니다.</span></div>
         <div class="legend-item"><strong>문서 이동</strong><span class="muted">팀 간 handoff가 검증 후 업무로 넘어가는 흐름을 뜻합니다.</span></div>
-        <div class="legend-item"><strong>클릭 흐름</strong><span class="muted">상단 실행 기록에서 각 에이전트 산출물을 확인할 수 있습니다.</span></div>
+        <div class="legend-item"><strong>10명 편제</strong><span class="muted">클라이언트 운영팀 5명과 커머스팀 5명이 같은 회사 안에서 움직입니다.</span></div>
       </section>
     """
     return html_page("AI 에이전트 오피스", body)
+
+
+def render_agent_card(team: str, agent_id: str, title: str, role: str, description: str, latest_run: Path | None) -> str:
+    state = company_agent_state(team, agent_id, latest_run)
+    return f"""
+      <section class="card agent-card team-{html.escape(team)}">
+        <div class="card-head">
+          <h2>{html.escape(title)}</h2>
+          <span class="team-chip">{html.escape(TEAM_LABELS[team])}</span>
+        </div>
+        <div class="metric">{html.escape(state["outbox"])}</div>
+        <p class="muted">{html.escape(role)}</p>
+        <p class="muted">{html.escape(description)}</p>
+        <div class="card-foot">
+          <span class="badge {html.escape(state["tone"])}">{html.escape(state["label"])}</span>
+          <span class="muted">{html.escape(state["unit"])} 기준</span>
+        </div>
+      </section>
+    """
+
+
+def render_team_section(team: str, agents: list[tuple[str, str, str, str]], latest_run: Path | None) -> str:
+    cards = [
+        render_agent_card(team, agent_id, title, role, description, latest_run)
+        for agent_id, title, role, description in agents
+    ]
+    caption = (
+        "상품 발굴부터 최종 판단까지 판매 후보를 검수합니다."
+        if team == "commerce"
+        else "고객 온보딩부터 CS, 주간 리포트와 QA까지 운영 자동화를 맡습니다."
+    )
+    return f"""
+      <section class="team-section">
+        <div class="team-heading">
+          <div>
+            <h2>{html.escape(TEAM_LABELS[team])}</h2>
+            <p class="muted">{caption}</p>
+          </div>
+          <span class="team-count">5명</span>
+        </div>
+        <div class="grid team-grid">{''.join(cards)}</div>
+      </section>
+    """
 
 
 def render_dashboard() -> str:
@@ -1330,20 +1719,7 @@ def render_dashboard() -> str:
     latest_run = runs[0] if runs else None
     latest_meta = read_run_metadata(latest_run) if latest_run else {}
     latest_report = read_text(REPORTS / "latest_agent_run.md", "아직 생성된 보고서가 없습니다.")
-
-    cards = []
-    for agent_id, title, role, description in AGENTS:
-        state = agent_run_state(agent_id, latest_run)
-        cards.append(
-            f"""
-            <section class="card">
-              <h2>{html.escape(title)}</h2>
-              <div class="metric">{html.escape(state["outbox"])}</div>
-              <p class="muted">{html.escape(role)}</p>
-              <p class="muted">{html.escape(description)}</p>
-            </section>
-            """
-        )
+    client_log_count = sum(client_ops_activity_count(agent_id) for agent_id, *_rest in CLIENT_OPS_AGENTS)
 
     run_items = []
     for run_dir in runs[:8]:
@@ -1367,8 +1743,19 @@ def render_dashboard() -> str:
           <div class="metric run-id">{html.escape(str(latest_meta.get("run_id", "0")))}</div>
           <div class="muted">{html.escape(str(latest_meta.get("created_at", "아직 시작 전")))}</div>
         </section>
-        {''.join(cards)}
+        <section class="card">
+          <h2>전체 직원</h2>
+          <div class="metric">{len(COMPANY_AGENTS)}</div>
+          <p class="muted">클라이언트 운영팀 5명 + 커머스팀 5명</p>
+        </section>
+        <section class="card">
+          <h2>Client Ops 로그</h2>
+          <div class="metric">{client_log_count}</div>
+          <p class="muted">김은보, 박실행, 이용대, 최분석, 정총괄의 운영 기록</p>
+        </section>
       </section>
+      {render_team_section("client_ops", CLIENT_OPS_AGENTS, latest_run)}
+      {render_team_section("commerce", COMMERCE_AGENTS, latest_run)}
       {approval_cards}
       {approval_panel}
       {render_agent_flow(latest_run)}
@@ -1434,13 +1821,16 @@ def render_opinions() -> str:
     latest_run = runs[0] if runs else None
     latest_meta = read_run_metadata(latest_run) if latest_run else {}
     sections = []
-    for agent_id, title, role, _description in AGENTS:
-        report = read_text(latest_run / f"{agent_id}.md", "이 에이전트의 의견서가 아직 없습니다.") if latest_run else "아직 실행 산출물이 없습니다."
+    for team, agent_id, title, role, _description in COMPANY_AGENTS:
+        if team == "commerce":
+            report = read_text(latest_run / f"{agent_id}.md", "이 에이전트의 의견서가 아직 없습니다.") if latest_run else "아직 실행 산출물이 없습니다."
+        else:
+            report = client_ops_agent_report(agent_id)
         sections.append(
             f"""
             <section class="panel">
               <h2>{html.escape(title)}</h2>
-              <p class="muted">{html.escape(role)}</p>
+              <p class="muted">{html.escape(TEAM_LABELS[team])} · {html.escape(role)}</p>
               <pre>{html.escape(report)}</pre>
             </section>
             """
@@ -1448,7 +1838,7 @@ def render_opinions() -> str:
     body = f"""
       <section class="office-hero">
         <h2>직원들 의견서</h2>
-        <p class="muted">최신 실행 {html.escape(str(latest_meta.get("run_id", "아직 없음")))} 기준의 에이전트별 판단 근거입니다.</p>
+        <p class="muted">최신 커머스 실행 {html.escape(str(latest_meta.get("run_id", "아직 없음")))}와 client-ops 운영 로그 기준의 10명 판단 근거입니다.</p>
       </section>
       <div style="display:grid; gap:16px;">{''.join(sections)}</div>
     """
