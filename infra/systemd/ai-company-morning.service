@@ -1,0 +1,12 @@
+[Unit]
+Description=AI Adam Agent Company morning start
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/ai-adam-agent-company
+Environment=PYTHONIOENCODING=utf-8
+EnvironmentFile=-/opt/ai-adam-agent-company/teams/commerce-agent-team/.env
+ExecStart=/usr/bin/python3 /opt/ai-adam-agent-company/scripts/company_morning_start.py

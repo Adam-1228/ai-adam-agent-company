@@ -1,0 +1,10 @@
+[Unit]
+Description=Start AI Adam Agent Company every day at 09:00 KST
+
+[Timer]
+OnCalendar=*-*-* 09:00:00
+Persistent=true
+Unit=ai-company-morning.service
+
+[Install]
+WantedBy=timers.target

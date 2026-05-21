@@ -168,3 +168,46 @@ Status checks:
 systemctl status commerce-cleanup.timer
 df -h /
 ```
+
+## 8. Daily Morning Start and 6-Hour Work Cycle
+
+The server should run even when Adam's PC is off.
+
+Morning company start:
+
+```text
+ai-company-morning.timer -> every day 09:00 KST
+```
+
+This morning workflow runs:
+
+- client-ops preflight
+- client-ops mock-vs-real structural check in skip-real mode
+- commerce daily agent run with LLM
+- commerce run retention cleanup
+
+The existing 6-hour commerce work cycle remains enabled:
+
+```text
+commerce-agents.timer -> every 6 hours
+```
+
+Install or refresh the morning timer on EC2:
+
+```bash
+cd /opt/ai-adam-agent-company
+sudo cp infra/systemd/ai-company-morning.service /etc/systemd/system/
+sudo cp infra/systemd/ai-company-morning.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now ai-company-morning.timer
+sudo systemctl enable --now commerce-agents.timer
+systemctl list-timers --all | grep -E 'ai-company-morning|commerce-agents|commerce-cleanup'
+```
+
+Manual smoke run:
+
+```bash
+sudo systemctl start ai-company-morning.service
+systemctl status ai-company-morning.service --no-pager -l
+cat /opt/ai-adam-agent-company/teams/commerce-agent-team/runtime/company_morning/latest.json
+```
