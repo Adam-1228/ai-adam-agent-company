@@ -9,7 +9,7 @@ The first production path is commerce automation: find product opportunities, sc
 | Team | Owner | Purpose | Status |
 | --- | --- | --- | --- |
 | `teams/commerce-agent-team` | Codex | Product discovery, scoring, compliance checks, listing drafts, dashboard | Ready for EC2 deployment |
-| `teams/client-ops-team` | Claude | Client onboarding, CS, recurring operations, weekly reports, QA | Placeholder ready |
+| `teams/client-ops-team` | Claude | Client onboarding, CS, recurring operations, weekly reports, QA | v0.1 ready -- 5 agents drafted, awaiting pre-launch checklist |
 
 ## Repository Layout
 
