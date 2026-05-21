@@ -7,6 +7,7 @@ import html
 import json
 import os
 import shutil
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -19,6 +20,8 @@ RUNS = WORKFORCE / "runs"
 RUNTIME = ROOT / "runtime"
 LLM_USAGE_LOG = RUNTIME / "llm_usage.jsonl"
 CLIENT_OPS_HANDOFFS = RUNTIME / "client_ops_handoffs"
+APPROVALS_PATH = RUNTIME / "approval_decisions.json"
+APPROVAL_LOG = RUNTIME / "approval_log.jsonl"
 
 AGENTS = [
     ("01_market_scout", "시장 탐색가", "상품 기회 발굴", "수요 신호와 카테고리 후보를 찾습니다."),
@@ -150,6 +153,192 @@ def handoff_summary() -> dict[str, str]:
     received = len([p for p in CLIENT_OPS_HANDOFFS.glob("*.json") if p.is_file()])
     task_log = "있음" if (CLIENT_OPS_HANDOFFS / "commerce_tasks.md").exists() else "없음"
     return {"received": str(received), "task_log": task_log}
+
+
+def load_approval_decisions() -> dict[str, dict]:
+    if not APPROVALS_PATH.exists():
+        return {}
+    try:
+        payload = json.loads(APPROVALS_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def save_approval_decisions(decisions: dict[str, dict]) -> None:
+    RUNTIME.mkdir(parents=True, exist_ok=True)
+    APPROVALS_PATH.write_text(json.dumps(decisions, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def approval_for_run(run_id: str) -> dict:
+    return load_approval_decisions().get(run_id, {})
+
+
+def approval_label(status: str) -> str:
+    labels = {
+        "approved": "승인됨",
+        "rejected": "반려됨",
+        "canceled": "취소됨",
+        "pending": "미확인",
+    }
+    return labels.get(status, "미확인")
+
+
+def approval_tone(status: str) -> str:
+    tones = {
+        "approved": "good",
+        "rejected": "danger",
+        "canceled": "muted",
+        "pending": "warn",
+    }
+    return tones.get(status, "warn")
+
+
+def latest_approval_decision() -> dict:
+    decisions = load_approval_decisions()
+    if not decisions:
+        return {}
+    return max(decisions.values(), key=lambda item: str(item.get("decided_at", "")))
+
+
+def record_approval(run_id: str, action: str, note: str) -> None:
+    actions = {
+        "approve": "approved",
+        "reject": "rejected",
+        "cancel": "canceled",
+    }
+    if action not in actions:
+        raise ValueError("unsupported approval action")
+
+    clean_run_id = Path(run_id).name
+    if not clean_run_id:
+        raise ValueError("missing run id")
+    if not (RUNS / clean_run_id).is_dir():
+        raise ValueError("unknown run id")
+
+    decision = {
+        "run_id": clean_run_id,
+        "status": actions[action],
+        "label": approval_label(actions[action]),
+        "note": note.strip()[:1000],
+        "decided_by": "adam_dashboard",
+        "decided_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    decisions = load_approval_decisions()
+    decisions[clean_run_id] = decision
+    save_approval_decisions(decisions)
+
+    RUNTIME.mkdir(parents=True, exist_ok=True)
+    with APPROVAL_LOG.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(decision, ensure_ascii=False))
+        f.write("\n")
+
+
+def agent_opinion_summary(agent_id: str, run_dir: Path | None) -> str:
+    if not run_dir:
+        return "아직 실행 산출물이 없습니다."
+    report = read_text(run_dir / f"{agent_id}.md", "")
+    if not report:
+        return "이 에이전트의 의견서가 아직 없습니다."
+    lines = [line.strip("#- |") for line in report.splitlines() if line.strip()]
+    summary = " ".join(lines[:4])
+    return summary[:180] + ("..." if len(summary) > 180 else "")
+
+
+def render_approval_summary_cards(latest_run: Path | None, latest_meta: dict) -> str:
+    run_id = str(latest_meta.get("run_id", latest_run.name if latest_run else ""))
+    decision = approval_for_run(run_id) if run_id else {}
+    status = str(decision.get("status", "pending" if latest_run else "canceled"))
+    pending_count = "1" if latest_run and status == "pending" else "0"
+    opinions_count = "0"
+    if latest_run:
+        opinions_count = str(sum(1 for agent_id, *_rest in AGENTS if (latest_run / f"{agent_id}.md").exists()))
+    latest_decision = latest_approval_decision()
+    latest_label = latest_decision.get("label", "기록 없음")
+    latest_time = latest_decision.get("decided_at", "아직 결재 기록이 없습니다.")
+
+    return f"""
+      <section class="decision-cards">
+        <a class="decision-card" href="/approvals">
+          <h2>미확인 결재</h2>
+          <div class="metric">{html.escape(pending_count)}</div>
+          <p class="muted">최신 실행의 최종 진행 여부를 Adam이 승인합니다.</p>
+        </a>
+        <a class="decision-card" href="/opinions">
+          <h2>직원들 의견서</h2>
+          <div class="metric">{html.escape(opinions_count)}</div>
+          <p class="muted">각 에이전트가 남긴 산출물과 판단 근거입니다.</p>
+        </a>
+        <a class="decision-card" href="/approvals">
+          <h2>마지막 결재</h2>
+          <div class="metric decision-status">{html.escape(str(latest_label))}</div>
+          <p class="muted">{html.escape(str(latest_time))}</p>
+        </a>
+      </section>
+    """
+
+
+def render_approval_panel(latest_run: Path | None, latest_meta: dict) -> str:
+    if not latest_run:
+        return """
+          <section class="panel approval-panel">
+            <h2>최종 결재 센터</h2>
+            <p class="muted">아직 결재할 실행 결과가 없습니다.</p>
+          </section>
+        """
+
+    run_id = str(latest_meta.get("run_id", latest_run.name))
+    decision = approval_for_run(run_id)
+    status = str(decision.get("status", "pending"))
+    report = read_text(REPORTS / "latest_agent_run.md", "")
+    brief = " ".join(line.strip("#- ") for line in report.splitlines() if line.strip())[:360]
+    if not brief:
+        brief = "최신 최종 보고서가 아직 비어 있습니다."
+
+    return f"""
+      <section class="panel approval-panel">
+        <div class="section-head">
+          <div>
+            <h2>최종 결재 센터</h2>
+            <p class="muted">승인은 내부 결정 기록만 남깁니다. 자동 게시나 자동 결제는 실행하지 않습니다.</p>
+          </div>
+          <span class="badge {approval_tone(status)}">{html.escape(approval_label(status))}</span>
+        </div>
+        <div class="approval-body">
+          <div>
+            <div class="kv"><span>대상 실행</span><strong>{html.escape(run_id)}</strong></div>
+            <div class="kv"><span>생성 시각</span><strong>{html.escape(str(latest_meta.get("created_at", "unknown")))}</strong></div>
+            <p class="approval-brief">{html.escape(brief)}</p>
+          </div>
+          <form class="approval-form" method="post" action="/approval">
+            <input type="hidden" name="run_id" value="{html.escape(run_id)}">
+            <label for="approval-note">결재 메모</label>
+            <textarea id="approval-note" name="note" rows="3" placeholder="예: 샘플 확인 후 진행, 소싱처 부족으로 반려 등">{html.escape(str(decision.get("note", "")))}</textarea>
+            <div class="approval-actions">
+              <button class="action approve" type="submit" name="action" value="approve">승인</button>
+              <button class="action reject" type="submit" name="action" value="reject">반려</button>
+              <button class="action cancel" type="submit" name="action" value="cancel">취소</button>
+            </div>
+          </form>
+        </div>
+      </section>
+    """
+
+
+def render_opinion_cards(latest_run: Path | None) -> str:
+    cards = []
+    for agent_id, title, role, _description in AGENTS:
+        summary = agent_opinion_summary(agent_id, latest_run)
+        cards.append(
+            f"""
+            <article class="opinion-card">
+              <h3>{html.escape(title)}</h3>
+              <p class="muted">{html.escape(role)}</p>
+              <p>{html.escape(summary)}</p>
+            </article>
+            """
+        )
+    return '<section class="opinion-grid">' + "".join(cards) + "</section>"
 
 
 def agent_run_state(agent_id: str, latest_run: Path | None) -> dict[str, str]:
@@ -345,6 +534,110 @@ def html_page(title: str, body: str) -> str:
       font-size: 16px;
       overflow-wrap: anywhere;
       line-height: 1.35;
+    }}
+    .decision-cards {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }}
+    .decision-card {{
+      display: block;
+      min-height: 132px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+      text-decoration: none;
+    }}
+    .decision-card h2 {{
+      margin: 0 0 8px;
+      font-size: 15px;
+    }}
+    .decision-status {{
+      font-size: 21px;
+      line-height: 1.3;
+    }}
+    .approval-panel {{
+      margin-top: 16px;
+    }}
+    .approval-body {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 16px;
+      align-items: start;
+    }}
+    .approval-brief {{
+      margin: 12px 0 0;
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.6;
+    }}
+    .approval-form {{
+      display: grid;
+      gap: 8px;
+    }}
+    .approval-form label {{
+      font-size: 13px;
+      font-weight: 700;
+    }}
+    .approval-form textarea {{
+      width: 100%;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 13px;
+    }}
+    .approval-actions {{
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }}
+    .action {{
+      min-height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: #fff;
+      font-family: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }}
+    .action.approve {{
+      background: #047857;
+      border-color: #047857;
+    }}
+    .action.reject {{
+      background: #b42318;
+      border-color: #b42318;
+    }}
+    .action.cancel {{
+      background: #64748b;
+      border-color: #64748b;
+    }}
+    .opinion-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }}
+    .opinion-card {{
+      min-height: 150px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }}
+    .opinion-card h3 {{
+      margin: 0 0 6px;
+      font-size: 15px;
+    }}
+    .opinion-card p {{
+      margin: 0 0 8px;
+      font-size: 13px;
     }}
     .muted {{
       color: var(--muted);
@@ -813,6 +1106,12 @@ def html_page(title: str, body: str) -> str:
       .panels {{
         grid-template-columns: 1fr;
       }}
+      .decision-cards {{
+        grid-template-columns: 1fr;
+      }}
+      .approval-body {{
+        grid-template-columns: 1fr;
+      }}
       .office-floor {{
         grid-template-columns: 1fr 1fr;
         grid-template-rows: auto auto 68px auto;
@@ -896,6 +1195,17 @@ def html_page(title: str, body: str) -> str:
         width: 58px;
         height: 34px;
       }}
+      .approval-panel .kv {{
+        display: grid;
+        gap: 3px;
+      }}
+      .approval-panel .kv strong {{
+        text-align: left;
+        overflow-wrap: anywhere;
+      }}
+      .approval-actions {{
+        grid-template-columns: 1fr;
+      }}
       .hallway {{
         min-height: 68px;
       }}
@@ -911,6 +1221,7 @@ def html_page(title: str, body: str) -> str:
       <h1>{html.escape(title)}</h1>
       <nav>
         <a href="/">대시보드</a>
+        <a href="/approvals">결재 센터</a>
         <a href="/office">AI 에이전트 오피스</a>
         <a href="/report">최신 보고서</a>
         <a href="/runs">실행 기록</a>
@@ -1046,6 +1357,9 @@ def render_dashboard() -> str:
     if not run_items:
         run_items.append('<span class="muted">아직 실행 기록이 없습니다.</span>')
 
+    approval_cards = render_approval_summary_cards(latest_run, latest_meta)
+    approval_panel = render_approval_panel(latest_run, latest_meta)
+
     body = f"""
       <section class="grid">
         <section class="card">
@@ -1055,6 +1369,8 @@ def render_dashboard() -> str:
         </section>
         {''.join(cards)}
       </section>
+      {approval_cards}
+      {approval_panel}
       {render_agent_flow(latest_run)}
       <section class="panels">
         <aside class="side-stack">
@@ -1072,6 +1388,71 @@ def render_dashboard() -> str:
       </section>
     """
     return html_page("커머스 에이전트 대시보드", body)
+
+
+def render_approvals() -> str:
+    runs = list_runs()
+    latest_run = runs[0] if runs else None
+    latest_meta = read_run_metadata(latest_run) if latest_run else {}
+    decisions = load_approval_decisions()
+    history_items = []
+    for decision in sorted(decisions.values(), key=lambda item: str(item.get("decided_at", "")), reverse=True)[:12]:
+        history_items.append(
+            f"""
+            <a href="/run?id={html.escape(str(decision.get("run_id", "")))}">
+              <strong>{html.escape(str(decision.get("run_id", "")))}</strong>
+              <br><span class="muted">{html.escape(str(decision.get("label", "")))} / {html.escape(str(decision.get("decided_at", "")))}</span>
+            </a>
+            """
+        )
+    if not history_items:
+        history_items.append('<span class="muted">아직 결재 기록이 없습니다.</span>')
+
+    body = f"""
+      <section class="office-hero">
+        <h2>결재 센터</h2>
+        <p class="muted">에이전트 회사의 최종 진행 여부를 승인, 반려, 취소로 기록합니다.</p>
+      </section>
+      {render_approval_summary_cards(latest_run, latest_meta)}
+      {render_approval_panel(latest_run, latest_meta)}
+      <section class="panels">
+        <section class="panel">
+          <h2>직원들 의견서 요약</h2>
+          {render_opinion_cards(latest_run)}
+        </section>
+        <aside class="panel">
+          <h2>결재 기록</h2>
+          <div class="run-list">{''.join(history_items)}</div>
+        </aside>
+      </section>
+    """
+    return html_page("결재 센터", body)
+
+
+def render_opinions() -> str:
+    runs = list_runs()
+    latest_run = runs[0] if runs else None
+    latest_meta = read_run_metadata(latest_run) if latest_run else {}
+    sections = []
+    for agent_id, title, role, _description in AGENTS:
+        report = read_text(latest_run / f"{agent_id}.md", "이 에이전트의 의견서가 아직 없습니다.") if latest_run else "아직 실행 산출물이 없습니다."
+        sections.append(
+            f"""
+            <section class="panel">
+              <h2>{html.escape(title)}</h2>
+              <p class="muted">{html.escape(role)}</p>
+              <pre>{html.escape(report)}</pre>
+            </section>
+            """
+        )
+    body = f"""
+      <section class="office-hero">
+        <h2>직원들 의견서</h2>
+        <p class="muted">최신 실행 {html.escape(str(latest_meta.get("run_id", "아직 없음")))} 기준의 에이전트별 판단 근거입니다.</p>
+      </section>
+      <div style="display:grid; gap:16px;">{''.join(sections)}</div>
+    """
+    return html_page("직원들 의견서", body)
 
 
 def render_report() -> str:
@@ -1145,6 +1526,10 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/":
             content = render_dashboard()
+        elif parsed.path == "/approvals":
+            content = render_approvals()
+        elif parsed.path == "/opinions":
+            content = render_opinions()
         elif parsed.path == "/office":
             content = render_office()
         elif parsed.path == "/report":
@@ -1164,6 +1549,39 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
         self.wfile.write(encoded)
+
+    def do_POST(self) -> None:
+        if not self.is_authorized():
+            self.request_auth()
+            return
+
+        parsed = urlparse(self.path)
+        if parsed.path != "/approval":
+            self.send_error(404)
+            return
+
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        raw_body = self.rfile.read(length).decode("utf-8", errors="replace")
+        form = parse_qs(raw_body)
+        run_id = form.get("run_id", [""])[0]
+        action = form.get("action", [""])[0]
+        note = form.get("note", [""])[0]
+
+        try:
+            record_approval(run_id, action, note)
+        except ValueError as exc:
+            body = html_page("결재 오류", f'<section class="panel"><h2>결재 오류</h2><p>{html.escape(str(exc))}</p></section>')
+            encoded = body.encode("utf-8")
+            self.send_response(400)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+            return
+
+        self.send_response(303)
+        self.send_header("Location", "/approvals")
+        self.end_headers()
 
     def log_message(self, fmt: str, *args: object) -> None:
         print(f"dashboard: {fmt % args}")
