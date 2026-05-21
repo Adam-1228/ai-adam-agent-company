@@ -28,6 +28,44 @@ AGENTS = [
     ("05_ops_manager", "운영 관리자", "최종 판단", "진행/검토/보류 결론과 다음 액션을 조율합니다."),
 ]
 
+OFFICE_LAYOUT = {
+    "01_market_scout": {
+        "room": "리서치룸",
+        "area": "scout",
+        "desk": "market",
+        "status": "검색중",
+        "focus": "상품 후보 발굴",
+    },
+    "02_margin_analyst": {
+        "room": "분석실",
+        "area": "analyst",
+        "desk": "numbers",
+        "status": "계산중",
+        "focus": "마진과 경쟁 강도",
+    },
+    "03_risk_guardian": {
+        "room": "검수실",
+        "area": "risk",
+        "desk": "risk",
+        "status": "검토중",
+        "focus": "인증/IP/반품 리스크",
+    },
+    "04_listing_builder": {
+        "room": "콘텐츠룸",
+        "area": "listing",
+        "desk": "copy",
+        "status": "작성중",
+        "focus": "상세페이지 초안",
+    },
+    "05_ops_manager": {
+        "room": "운영실",
+        "area": "ops",
+        "desk": "approval",
+        "status": "승인대기",
+        "focus": "최종 판단과 다음 액션",
+    },
+}
+
 
 def load_env_file() -> None:
     env_path = ROOT / ".env"
@@ -502,12 +540,291 @@ def html_page(title: str, body: str) -> str:
       color: var(--accent-2);
       font-weight: 700;
     }}
+    .office-hero {{
+      display: grid;
+      gap: 6px;
+      margin-bottom: 16px;
+    }}
+    .office-hero p {{
+      margin: 0;
+      max-width: 760px;
+    }}
+    .office-shell {{
+      background: #eef2f6;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      overflow: hidden;
+    }}
+    .office-floor {{
+      position: relative;
+      min-height: 620px;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-rows: 1fr 74px 1fr;
+      grid-template-areas:
+        "scout analyst risk"
+        "hall hall hall"
+        "client listing ops";
+      gap: 10px;
+      padding: 10px;
+      border: 2px solid #cbd5df;
+      border-radius: 8px;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,.38) 1px, transparent 1px),
+        linear-gradient(rgba(255,255,255,.38) 1px, transparent 1px),
+        #dfe7ed;
+      background-size: 32px 32px;
+    }}
+    .office-room {{
+      position: relative;
+      min-height: 220px;
+      border: 2px solid #b8c3cf;
+      border-radius: 6px;
+      background:
+        linear-gradient(#fbfcfd 0 28px, transparent 28px),
+        linear-gradient(135deg, rgba(255,255,255,.72), rgba(255,255,255,.34)),
+        #e8efe9;
+      overflow: hidden;
+    }}
+    .room-scout {{ grid-area: scout; background-color: #edf7f1; }}
+    .room-analyst {{ grid-area: analyst; background-color: #f6f2e6; }}
+    .room-risk {{ grid-area: risk; background-color: #f3ecec; }}
+    .room-client {{ grid-area: client; background-color: #eef2fb; }}
+    .room-listing {{ grid-area: listing; background-color: #f1eef8; }}
+    .room-ops {{ grid-area: ops; background-color: #edf3f7; }}
+    .room-label {{
+      position: absolute;
+      top: 7px;
+      left: 10px;
+      right: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      z-index: 3;
+    }}
+    .room-label strong {{
+      font-size: 13px;
+    }}
+    .window {{
+      position: absolute;
+      top: 44px;
+      right: 18px;
+      width: 82px;
+      height: 42px;
+      border: 3px solid #c8d3df;
+      background:
+        linear-gradient(180deg, #f7fbff, #dcecf8);
+      box-shadow: inset 38px 0 0 rgba(255,255,255,.45);
+    }}
+    .window::after {{
+      content: "";
+      position: absolute;
+      left: 38px;
+      top: 0;
+      bottom: 0;
+      border-left: 2px solid #c8d3df;
+    }}
+    .plant {{
+      position: absolute;
+      right: 18px;
+      bottom: 22px;
+      width: 28px;
+      height: 42px;
+      border-bottom: 20px solid #8f684d;
+      border-left: 6px solid transparent;
+      border-right: 6px solid transparent;
+    }}
+    .plant::before {{
+      content: "";
+      position: absolute;
+      left: -16px;
+      bottom: 19px;
+      width: 42px;
+      height: 28px;
+      background:
+        radial-gradient(circle at 12px 15px, #4f9d69 0 9px, transparent 10px),
+        radial-gradient(circle at 24px 10px, #5fb878 0 10px, transparent 11px),
+        radial-gradient(circle at 31px 20px, #3f8c61 0 8px, transparent 9px);
+    }}
+    .office-desk {{
+      position: absolute;
+      left: 28px;
+      bottom: 30px;
+      width: min(58%, 190px);
+      height: 54px;
+      border: 3px solid #6b5749;
+      border-radius: 4px;
+      background: linear-gradient(#7b6252, #5c493e);
+      box-shadow: inset 0 8px 0 rgba(255,255,255,.12);
+    }}
+    .office-desk::before,
+    .office-desk::after {{
+      content: "";
+      position: absolute;
+      bottom: -26px;
+      width: 8px;
+      height: 26px;
+      background: #4f4038;
+    }}
+    .office-desk::before {{ left: 18px; }}
+    .office-desk::after {{ right: 18px; }}
+    .monitor {{
+      position: absolute;
+      top: -40px;
+      left: 22px;
+      width: 56px;
+      height: 36px;
+      border: 5px solid #333b45;
+      border-radius: 3px;
+      background: linear-gradient(135deg, #dff5ff, #ffffff);
+    }}
+    .monitor::after {{
+      content: "";
+      position: absolute;
+      left: 20px;
+      bottom: -15px;
+      width: 12px;
+      height: 10px;
+      background: #333b45;
+    }}
+    .desk-paper {{
+      position: absolute;
+      top: 13px;
+      right: 16px;
+      width: 34px;
+      height: 26px;
+      border-radius: 2px;
+      background:
+        linear-gradient(#8fb2d4 2px, transparent 2px) 6px 7px / 22px 6px no-repeat,
+        #fff;
+    }}
+    .avatar {{
+      position: absolute;
+      left: 82px;
+      bottom: 93px;
+      width: 44px;
+      height: 72px;
+      z-index: 2;
+    }}
+    .avatar::before {{
+      content: "";
+      position: absolute;
+      left: 8px;
+      top: 10px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #f0b48f;
+      box-shadow:
+        inset 0 7px 0 #5d3c33,
+        0 0 0 2px rgba(45,35,30,.2);
+    }}
+    .avatar::after {{
+      content: "";
+      position: absolute;
+      left: 10px;
+      bottom: 7px;
+      width: 24px;
+      height: 34px;
+      border-radius: 10px 10px 6px 6px;
+      background: #2f6f92;
+      box-shadow:
+        -7px 28px 0 -3px #26323f,
+        7px 28px 0 -3px #26323f;
+    }}
+    .avatar.scout::after {{ background: #2f7d64; }}
+    .avatar.analyst::after {{ background: #80623b; }}
+    .avatar.risk::after {{ background: #8a3d45; }}
+    .avatar.listing::after {{ background: #6d5ba6; }}
+    .avatar.ops::after {{ background: #375f7d; }}
+    .office-status {{
+      position: absolute;
+      left: 18px;
+      top: 42px;
+      max-width: 148px;
+      display: grid;
+      gap: 3px;
+      z-index: 4;
+    }}
+    .office-status strong {{
+      font-size: 14px;
+      line-height: 1.25;
+    }}
+    .office-status span {{
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.35;
+    }}
+    .hallway {{
+      grid-area: hall;
+      position: relative;
+      border: 2px dashed #b3beca;
+      border-radius: 6px;
+      background:
+        repeating-linear-gradient(90deg, rgba(255,255,255,.6) 0 26px, rgba(230,236,242,.9) 26px 52px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #41505f;
+      font-weight: 700;
+    }}
+    .handoff-doc {{
+      position: absolute;
+      left: 9%;
+      top: 20px;
+      width: 34px;
+      height: 42px;
+      border-radius: 4px;
+      background:
+        linear-gradient(135deg, transparent 0 9px, #d7e4f2 10px),
+        linear-gradient(#8fb2d4 2px, transparent 2px) 8px 15px / 18px 7px no-repeat,
+        #ffffff;
+      border: 2px solid #9fb0c0;
+      box-shadow: 0 4px 0 rgba(45,55,65,.12);
+      animation: handoffMove 8s ease-in-out infinite;
+    }}
+    @keyframes handoffMove {{
+      0%, 100% {{ transform: translateX(0); }}
+      50% {{ transform: translateX(720px); }}
+    }}
+    .office-legend {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }}
+    .legend-item {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 10px 12px;
+      font-size: 13px;
+    }}
+    .legend-item strong {{
+      display: block;
+      margin-bottom: 2px;
+    }}
     @media (max-width: 920px) {{
       .grid {{
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }}
       .panels {{
         grid-template-columns: 1fr;
+      }}
+      .office-floor {{
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: auto auto 68px auto;
+        grid-template-areas:
+          "scout analyst"
+          "risk listing"
+          "hall hall"
+          "client ops";
+      }}
+      @keyframes handoffMove {{
+        0%, 100% {{ transform: translateX(0); }}
+        50% {{ transform: translateX(420px); }}
       }}
     }}
     @media (max-width: 540px) {{
@@ -518,6 +835,18 @@ def html_page(title: str, body: str) -> str:
         align-items: flex-start;
         flex-direction: column;
         padding: 14px 0;
+      }}
+      nav {{
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr;
+      }}
+      nav a, .button {{
+        width: 100%;
+        min-width: 0;
+        padding: 0 8px;
+        font-size: 13px;
+        text-align: center;
       }}
       .grid {{
         grid-template-columns: 1fr;
@@ -533,6 +862,46 @@ def html_page(title: str, body: str) -> str:
         transform: rotate(90deg);
         justify-self: center;
       }}
+      .office-shell {{
+        padding: 10px;
+      }}
+      .office-floor {{
+        grid-template-columns: 1fr;
+        grid-template-rows: auto;
+        grid-template-areas:
+          "scout"
+          "analyst"
+          "risk"
+          "listing"
+          "ops"
+          "client"
+          "hall";
+      }}
+      .office-room {{
+        min-height: 230px;
+      }}
+      .office-status {{
+        right: 18px;
+        max-width: none;
+        padding: 8px;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, .76);
+      }}
+      .avatar {{
+        left: auto;
+        right: 68px;
+        bottom: 72px;
+      }}
+      .window {{
+        width: 58px;
+        height: 34px;
+      }}
+      .hallway {{
+        min-height: 68px;
+      }}
+      .handoff-doc {{
+        animation: none;
+      }}
     }}
   </style>
 </head>
@@ -542,6 +911,7 @@ def html_page(title: str, body: str) -> str:
       <h1>{html.escape(title)}</h1>
       <nav>
         <a href="/">대시보드</a>
+        <a href="/office">AI 에이전트 오피스</a>
         <a href="/report">최신 보고서</a>
         <a href="/runs">실행 기록</a>
       </nav>
@@ -550,6 +920,98 @@ def html_page(title: str, body: str) -> str:
   <main class="wrap">{body}</main>
 </body>
 </html>"""
+
+
+def render_office_room(agent_id: str, title: str, role: str, description: str, latest_run: Path | None) -> str:
+    layout = OFFICE_LAYOUT[agent_id]
+    state = agent_run_state(agent_id, latest_run)
+    desk_class = html.escape(layout["desk"])
+    area_class = html.escape(layout["area"])
+    return f"""
+      <section class="office-room room-{area_class}">
+        <div class="room-label">
+          <strong>{html.escape(layout["room"])}</strong>
+          <span class="badge {html.escape(state["tone"])}">{html.escape(state["label"])}</span>
+        </div>
+        <div class="window"></div>
+        <div class="office-status">
+          <strong>{html.escape(layout["status"])} · {html.escape(title)}</strong>
+          <span>{html.escape(role)}</span>
+          <span>{html.escape(layout["focus"])}</span>
+          <span>산출물 {html.escape(state["outbox"])}개</span>
+        </div>
+        <div class="office-desk desk-{desk_class}">
+          <div class="monitor"></div>
+          <div class="desk-paper"></div>
+        </div>
+        <div class="avatar {area_class}" aria-hidden="true"></div>
+        <div class="plant" aria-hidden="true"></div>
+      </section>
+    """
+
+
+def render_client_room() -> str:
+    handoff = handoff_summary()
+    return f"""
+      <section class="office-room room-client">
+        <div class="room-label">
+          <strong>Client Ops 연결실</strong>
+          <span class="badge muted">대기</span>
+        </div>
+        <div class="window"></div>
+        <div class="office-status">
+          <strong>외부 팀 handoff</strong>
+          <span>클로드 팀의 신호를 commerce 팀으로 넘기는 입구입니다.</span>
+          <span>수신 {html.escape(handoff["received"])}건</span>
+          <span>작업 로그 {html.escape(handoff["task_log"])}</span>
+        </div>
+        <div class="office-desk">
+          <div class="monitor"></div>
+          <div class="desk-paper"></div>
+        </div>
+        <div class="avatar ops" aria-hidden="true"></div>
+      </section>
+    """
+
+
+def render_office() -> str:
+    runs = list_runs()
+    latest_run = runs[0] if runs else None
+    latest_meta = read_run_metadata(latest_run) if latest_run else {}
+    rooms = [
+        render_office_room(agent_id, title, role, description, latest_run)
+        for agent_id, title, role, description in AGENTS
+    ]
+    body = f"""
+      <section class="office-hero">
+        <h2>AI 에이전트 오피스</h2>
+        <p class="muted">
+          커머스 에이전트들이 어떤 방에서 어떤 업무를 맡는지 한눈에 보는 시각화 화면입니다.
+          운영 상태를 설명하거나, 자동화 회사를 제품처럼 보여줄 때 사용할 수 있습니다.
+        </p>
+        <p class="muted">최신 실행: {html.escape(str(latest_meta.get("run_id", "아직 없음")))}</p>
+      </section>
+      <section class="office-shell">
+        <div class="office-floor">
+          {rooms[0]}
+          {rooms[1]}
+          {rooms[2]}
+          <div class="hallway">
+            <div class="handoff-doc" aria-hidden="true"></div>
+            Commerce Handoff Hall
+          </div>
+          {render_client_room()}
+          {rooms[3]}
+          {rooms[4]}
+        </div>
+      </section>
+      <section class="office-legend">
+        <div class="legend-item"><strong>초록 배지</strong><span class="muted">최근 실행에서 산출물이 확인된 에이전트입니다.</span></div>
+        <div class="legend-item"><strong>문서 이동</strong><span class="muted">팀 간 handoff가 검증 후 업무로 넘어가는 흐름을 뜻합니다.</span></div>
+        <div class="legend-item"><strong>클릭 흐름</strong><span class="muted">상단 실행 기록에서 각 에이전트 산출물을 확인할 수 있습니다.</span></div>
+      </section>
+    """
+    return html_page("AI 에이전트 오피스", body)
 
 
 def render_dashboard() -> str:
@@ -683,6 +1145,8 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/":
             content = render_dashboard()
+        elif parsed.path == "/office":
+            content = render_office()
         elif parsed.path == "/report":
             content = render_report()
         elif parsed.path == "/runs":
