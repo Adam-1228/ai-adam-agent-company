@@ -1,0 +1,11 @@
+[Unit]
+Description=Commerce agent team run
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/ai-adam-agent-company/teams/commerce-agent-team
+EnvironmentFile=/opt/ai-adam-agent-company/teams/commerce-agent-team/.env
+ExecStart=/usr/bin/python3 scripts/run_agents.py --use-llm

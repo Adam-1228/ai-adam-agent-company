@@ -1,0 +1,33 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+
+# Python/runtime artifacts
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local OS/editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Runtime reports and agent execution logs
+teams/*/reports/*.md
+teams/*/workforce/runs/
+teams/*/workforce/reports/*.md
+teams/*/workforce/agents/*/outbox/
+
+# Manual intake may contain real business data.
+teams/*/data/manual_inbox/*
+!teams/*/data/manual_inbox/.gitkeep
+!teams/*/data/manual_inbox/example_candidates.csv
+

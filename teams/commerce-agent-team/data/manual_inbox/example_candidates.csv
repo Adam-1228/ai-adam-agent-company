@@ -1,0 +1,2 @@
+product_name,source_market,target_market,category,source_price_krw,target_price_krw,shipping_cost_krw,platform_fee_rate,estimated_monthly_demand,competitor_count,review_count,avg_rating,negative_review_rate,return_risk,certification_risk,brand_ip_risk,image_rights_risk,notes,source_url
+foldable cable travel pouch,amazon,coupang,travel accessories,3500,12900,2800,0.108,450,55,240,4.4,0.07,2,1,1,1,example row for importer dry-run,https://example.com/product

@@ -1,0 +1,31 @@
+{
+  "default_provider": "mock",
+  "default_model": "gpt-5.4-mini",
+  "agents": {
+    "01_market_scout": {
+      "provider": "openai",
+      "model": "gpt-5.4-mini",
+      "temperature": 0.2
+    },
+    "02_margin_analyst": {
+      "provider": "openai",
+      "model": "gpt-5.4-mini",
+      "temperature": 0.1
+    },
+    "03_risk_guardian": {
+      "provider": "openai",
+      "model": "gpt-5.4",
+      "temperature": 0.1
+    },
+    "04_listing_builder": {
+      "provider": "openai",
+      "model": "gpt-5.4-mini",
+      "temperature": 0.4
+    },
+    "05_ops_manager": {
+      "provider": "openai",
+      "model": "gpt-5.4",
+      "temperature": 0.2
+    }
+  }
+}

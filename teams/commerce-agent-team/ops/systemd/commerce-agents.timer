@@ -1,0 +1,11 @@
+[Unit]
+Description=Run commerce agent team every 6 hours
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=6h
+Persistent=true
+Unit=commerce-agents.service
+
+[Install]
+WantedBy=timers.target
