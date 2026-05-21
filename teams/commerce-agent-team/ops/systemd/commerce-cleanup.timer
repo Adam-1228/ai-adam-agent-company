@@ -1,0 +1,10 @@
+[Unit]
+Description=Clean old commerce agent runs daily
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+Unit=commerce-cleanup.service
+
+[Install]
+WantedBy=timers.target

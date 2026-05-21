@@ -138,3 +138,33 @@ Then update AWS security group TCP `8080` source to:
 ```text
 NEW_PUBLIC_IP/32
 ```
+
+## 7. Run Retention and Disk Safety
+
+Commerce runs are cleaned daily by:
+
+```text
+commerce-cleanup.timer
+```
+
+The cleanup keeps the latest 30 runs and matching agent outbox artifacts.
+
+Manual dry run:
+
+```bash
+cd /opt/ai-adam-agent-company/teams/commerce-agent-team
+.venv/bin/python scripts/cleanup_runs.py --keep 30 --dry-run
+```
+
+Manual cleanup:
+
+```bash
+.venv/bin/python scripts/cleanup_runs.py --keep 30
+```
+
+Status checks:
+
+```bash
+systemctl status commerce-cleanup.timer
+df -h /
+```

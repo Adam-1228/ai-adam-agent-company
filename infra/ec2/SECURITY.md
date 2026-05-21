@@ -22,6 +22,12 @@ The agent run timer is:
 commerce-agents.timer
 ```
 
+The retention cleanup timer is:
+
+```text
+commerce-cleanup.timer
+```
+
 Useful checks:
 
 ```bash

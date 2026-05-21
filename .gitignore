@@ -21,6 +21,7 @@ Thumbs.db
 .vscode/
 
 # Runtime reports and agent execution logs
+teams/*/runtime/
 teams/*/reports/*
 !teams/*/reports/.gitkeep
 teams/*/workforce/runs/

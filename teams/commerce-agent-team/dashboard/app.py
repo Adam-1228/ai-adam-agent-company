@@ -6,6 +6,7 @@ import hmac
 import html
 import json
 import os
+import shutil
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -15,6 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 REPORTS = ROOT / "reports"
 WORKFORCE = ROOT / "workforce"
 RUNS = WORKFORCE / "runs"
+RUNTIME = ROOT / "runtime"
+LLM_USAGE_LOG = RUNTIME / "llm_usage.jsonl"
 
 AGENTS = [
     ("01_market_scout", "Market Scout", "Find product opportunities"),
@@ -64,6 +67,61 @@ def agent_outbox_count(agent_id: str) -> int:
     if not outbox.exists():
         return 0
     return len([p for p in outbox.iterdir() if p.is_file() and p.suffix == ".md"])
+
+
+def env_summary() -> dict[str, str]:
+    return {
+        "provider": os.getenv("LLM_PROVIDER", "mock") or "mock",
+        "base_url": os.getenv("OPENAI_BASE_URL", ""),
+        "dashboard_auth": "on" if os.getenv("DASHBOARD_USERNAME") and os.getenv("DASHBOARD_PASSWORD") else "off",
+    }
+
+
+def disk_summary() -> dict[str, str]:
+    total, used, free = shutil.disk_usage(ROOT)
+    used_pct = round((used / total) * 100, 1) if total else 0
+    return {
+        "used_pct": f"{used_pct}%",
+        "free_gb": f"{free / (1024 ** 3):.1f} GB",
+        "total_gb": f"{total / (1024 ** 3):.1f} GB",
+    }
+
+
+def llm_usage_summary() -> dict[str, str]:
+    if not LLM_USAGE_LOG.exists():
+        return {"ok": "0", "error": "0", "tokens": "0", "latest": "none"}
+
+    events = []
+    for line in LLM_USAGE_LOG.read_text(encoding="utf-8", errors="replace").splitlines()[-200:]:
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+
+    ok = sum(1 for event in events if event.get("status") == "ok")
+    error = sum(1 for event in events if event.get("status") == "error")
+    tokens = sum(int(event.get("total_tokens") or 0) for event in events)
+    latest = events[-1].get("created_at", "none") if events else "none"
+    return {"ok": str(ok), "error": str(error), "tokens": str(tokens), "latest": str(latest)}
+
+
+def render_health_panel() -> str:
+    env = env_summary()
+    disk = disk_summary()
+    usage = llm_usage_summary()
+    run_count = len(list_runs())
+    return f"""
+      <section class="panel">
+        <h2>System Health</h2>
+        <div class="kv"><span>LLM provider</span><strong>{html.escape(env["provider"])}</strong></div>
+        <div class="kv"><span>Dashboard auth</span><strong>{html.escape(env["dashboard_auth"])}</strong></div>
+        <div class="kv"><span>Stored runs</span><strong>{run_count}</strong></div>
+        <div class="kv"><span>Disk used</span><strong>{html.escape(disk["used_pct"])}</strong></div>
+        <div class="kv"><span>Disk free</span><strong>{html.escape(disk["free_gb"])}</strong></div>
+        <div class="kv"><span>LLM ok/errors</span><strong>{html.escape(usage["ok"])}/{html.escape(usage["error"])}</strong></div>
+        <div class="kv"><span>Recent tokens</span><strong>{html.escape(usage["tokens"])}</strong></div>
+      </section>
+    """
 
 
 def html_page(title: str, body: str) -> str:
@@ -135,7 +193,7 @@ def html_page(title: str, body: str) -> str:
     }}
     .grid {{
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
       gap: 12px;
     }}
     .card {{
@@ -190,6 +248,29 @@ def html_page(title: str, body: str) -> str:
       text-decoration: none;
       color: var(--text);
       background: #fff;
+    }}
+    .side-stack {{
+      display: grid;
+      gap: 16px;
+    }}
+    .kv {{
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      border-top: 1px solid var(--line);
+      padding: 8px 0;
+      font-size: 13px;
+    }}
+    .kv:first-of-type {{
+      border-top: 0;
+    }}
+    .kv span {{
+      color: var(--muted);
+    }}
+    .kv strong {{
+      color: var(--text);
+      text-align: right;
+      overflow-wrap: anywhere;
     }}
     pre {{
       white-space: pre-wrap;
@@ -280,9 +361,12 @@ def render_dashboard() -> str:
         {''.join(cards)}
       </section>
       <section class="panels">
-        <aside class="panel">
-          <h2>Recent Runs</h2>
-          <div class="run-list">{''.join(run_items)}</div>
+        <aside class="side-stack">
+          {render_health_panel()}
+          <section class="panel">
+            <h2>Recent Runs</h2>
+            <div class="run-list">{''.join(run_items)}</div>
+          </section>
         </aside>
         <section class="panel">
           <h2>Latest Final Report</h2>
