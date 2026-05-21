@@ -1,0 +1,35 @@
+{
+  "default_provider": "mock",
+  "default_model": "claude-sonnet-4-6",
+  "agents": {
+    "01_onboarding_manager": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "temperature": 0.3
+    },
+    "02_ops_operator": {
+      "provider": "google",
+      "model": "gemini-2.0-flash",
+      "temperature": 0.0
+    },
+    "03_cs_manager": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "temperature": 0.2
+    },
+    "04_data_analyst": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "temperature": 0.2,
+      "code_assist": {
+        "provider": "openai",
+        "model": "gpt-5.4-mini"
+      }
+    },
+    "05_coordinator_qa": {
+      "provider": "anthropic",
+      "model": "claude-opus-4-7",
+      "temperature": 0.1
+    }
+  }
+}

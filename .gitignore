@@ -21,13 +21,15 @@ Thumbs.db
 .vscode/
 
 # Runtime reports and agent execution logs
-teams/*/reports/*.md
+teams/*/reports/*
+!teams/*/reports/.gitkeep
 teams/*/workforce/runs/
 teams/*/workforce/reports/*.md
 teams/*/workforce/agents/*/outbox/
+teams/*/agents/*/tone_cards/*
+!teams/*/agents/*/tone_cards/.gitkeep
 
 # Manual intake may contain real business data.
 teams/*/data/manual_inbox/*
 !teams/*/data/manual_inbox/.gitkeep
 !teams/*/data/manual_inbox/example_candidates.csv
-
