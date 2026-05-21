@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CLIENT_OPS_ROOT = ROOT.parent / "client-ops-team"
 ASSETS = DASHBOARD_DIR / "assets"
 REPORTS = ROOT / "reports"
+CLIENT_OPS_REPORTS = CLIENT_OPS_ROOT / "reports"
 WORKFORCE = ROOT / "workforce"
 RUNS = WORKFORCE / "runs"
 RUNTIME = ROOT / "runtime"
@@ -158,6 +159,15 @@ def read_text(path: Path, fallback: str = "") -> str:
     if not path.exists():
         return fallback
     return path.read_text(encoding="utf-8", errors="replace")
+
+
+def latest_file(directory: Path, pattern: str) -> Path | None:
+    if not directory.exists():
+        return None
+    files = [p for p in directory.glob(pattern) if p.is_file()]
+    if not files:
+        return None
+    return max(files, key=lambda path: path.stat().st_mtime)
 
 
 def list_runs() -> list[Path]:
@@ -402,6 +412,47 @@ def client_ops_agent_report(agent_id: str) -> str:
         provider = (event.get("llm") or {}).get("provider", "unknown")
         lines.append(f"- Day {day} / {step} / {decision} / {provider}\n  {summary}")
     return "\n".join(lines)
+
+
+def report_metric(report: str, key: str, fallback: str = "0") -> str:
+    for line in report.splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith(f"- {key.lower()}:"):
+            return stripped.split(":", 1)[1].strip()
+    return fallback
+
+
+def preflight_report_summary() -> dict[str, str]:
+    path = latest_file(CLIENT_OPS_REPORTS, "preflight_*.md")
+    report = read_text(path, "아직 preflight 리포트가 없습니다.") if path else "아직 preflight 리포트가 없습니다."
+    status = report_metric(report, "Status", "보고서 없음")
+    return {
+        "path": path.name if path else "없음",
+        "report": report,
+        "pass": report_metric(report, "PASS"),
+        "fail": report_metric(report, "FAIL"),
+        "warn": report_metric(report, "WARN"),
+        "skip": report_metric(report, "SKIP_MANUAL"),
+        "status": status,
+        "tone": "good" if "READY FOR BETA" in status else ("danger" if "NOT READY" in status else "warn"),
+    }
+
+
+def mock_real_report_summary() -> dict[str, str]:
+    path = CLIENT_OPS_REPORTS / "mock_vs_real_diff.md"
+    report = read_text(path, "아직 mock vs real 비교 리포트가 없습니다.")
+    blocking = report_metric(report, "BLOCKING")
+    warn = report_metric(report, "WARN")
+    skip = report_metric(report, "SKIP")
+    tone = "good" if blocking == "0" and warn == "0" else ("danger" if blocking != "0" else "warn")
+    return {
+        "path": path.name if path.exists() else "없음",
+        "report": report,
+        "blocking": blocking,
+        "warn": warn,
+        "skip": skip,
+        "tone": tone,
+    }
 
 
 def render_approval_summary_cards(latest_run: Path | None, latest_meta: dict) -> str:
@@ -905,6 +956,13 @@ def html_page(title: str, body: str) -> str:
     .panels {{
       display: grid;
       grid-template-columns: 280px 1fr;
+      gap: 16px;
+      margin-top: 18px;
+      align-items: start;
+    }}
+    .ops-panels {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       gap: 16px;
       margin-top: 18px;
       align-items: start;
@@ -1469,6 +1527,9 @@ def html_page(title: str, body: str) -> str:
       .panels {{
         grid-template-columns: 1fr;
       }}
+      .ops-panels {{
+        grid-template-columns: 1fr;
+      }}
       .decision-cards {{
         grid-template-columns: 1fr;
       }}
@@ -1637,6 +1698,7 @@ def html_page(title: str, body: str) -> str:
         <a href="/">대시보드</a>
         <a href="/approvals">결재 센터</a>
         <a href="/office">AI 에이전트 오피스</a>
+        <a href="/ops-check">운영 점검</a>
         <a href="/report">최신 보고서</a>
         <a href="/runs">실행 기록</a>
       </nav>
@@ -1923,6 +1985,58 @@ def render_opinions() -> str:
     return html_page("직원들 의견서", body)
 
 
+def render_ops_check() -> str:
+    preflight = preflight_report_summary()
+    comparison = mock_real_report_summary()
+    preflight_badge = "READY" if preflight["tone"] == "good" else ("NOT READY" if preflight["tone"] == "danger" else "CHECK")
+    body = f"""
+      <section class="office-hero">
+        <h2>운영 점검</h2>
+        <p class="muted">Claude client-ops 팀과 commerce 팀의 실행 준비 상태를 보는 내부 점검판입니다.</p>
+      </section>
+      <section class="decision-cards">
+        <section class="decision-card">
+          <h2>Preflight 상태</h2>
+          <div class="metric decision-status">{html.escape(preflight["status"])}</div>
+          <p class="muted">{html.escape(preflight["path"])}</p>
+        </section>
+        <section class="decision-card">
+          <h2>자동 점검</h2>
+          <div class="metric">{html.escape(preflight["pass"])}</div>
+          <p class="muted">FAIL {html.escape(preflight["fail"])} / WARN {html.escape(preflight["warn"])} / SKIP {html.escape(preflight["skip"])}</p>
+        </section>
+        <section class="decision-card">
+          <h2>Mock vs Real</h2>
+          <div class="metric decision-status">BLOCK {html.escape(comparison["blocking"])}</div>
+          <p class="muted">WARN {html.escape(comparison["warn"])} / SKIP {html.escape(comparison["skip"])}</p>
+        </section>
+      </section>
+      <section class="ops-panels">
+        <section class="panel">
+          <div class="section-head">
+            <div>
+              <h2>Client Ops Preflight</h2>
+              <p class="muted">보안, 페르소나, LLM, 컴플레인 게이트, handoff 점검 결과입니다.</p>
+            </div>
+            <span class="badge {html.escape(preflight["tone"])}">{preflight_badge}</span>
+          </div>
+          <pre>{html.escape(preflight["report"])}</pre>
+        </section>
+        <aside class="panel">
+          <div class="section-head">
+            <div>
+              <h2>LLM 비교</h2>
+              <p class="muted">mock 출력과 real 출력의 구조 차이 점검입니다.</p>
+            </div>
+            <span class="badge {html.escape(comparison["tone"])}">BLOCK {html.escape(comparison["blocking"])}</span>
+          </div>
+          <pre>{html.escape(comparison["report"])}</pre>
+        </aside>
+      </section>
+    """
+    return html_page("운영 점검", body)
+
+
 def render_report() -> str:
     report = read_text(REPORTS / "latest_agent_run.md", "최신 에이전트 보고서를 찾지 못했습니다.")
     body = f'<section class="panel"><h2>최신 보고서</h2><pre>{html.escape(report)}</pre></section>'
@@ -2016,6 +2130,8 @@ class Handler(BaseHTTPRequestHandler):
             content = render_opinions()
         elif parsed.path == "/office":
             content = render_office()
+        elif parsed.path == "/ops-check":
+            content = render_ops_check()
         elif parsed.path == "/report":
             content = render_report()
         elif parsed.path == "/runs":
