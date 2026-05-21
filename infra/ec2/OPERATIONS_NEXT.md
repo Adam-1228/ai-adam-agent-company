@@ -53,50 +53,11 @@ From local PowerShell:
 ssh -i "C:\Users\ADAM\Downloads\bot-key.pem" ubuntu@3.104.252.39
 ```
 
-On EC2:
+On EC2, use the safe config helper:
 
 ```bash
 cd /opt/ai-adam-agent-company/teams/commerce-agent-team
-read -rsp "OpenAI API key: " OPENAI_KEY; echo
-export OPENAI_KEY
-.venv/bin/python - <<'PY'
-from pathlib import Path
-import os
-
-path = Path(".env")
-values = {}
-if path.exists():
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if "=" in line and not line.strip().startswith("#"):
-            key, value = line.split("=", 1)
-            values[key] = value
-
-values["LLM_PROVIDER"] = "openai"
-values["OPENAI_API_KEY"] = os.environ["OPENAI_KEY"]
-values.setdefault("OPENAI_BASE_URL", "https://api.openai.com/v1")
-
-ordered = [
-    "LLM_PROVIDER",
-    "OPENAI_API_KEY",
-    "OPENAI_BASE_URL",
-    "COMMERCE_AGENT_ENV",
-    "COMMERCE_AGENT_TIMEZONE",
-    "DASHBOARD_HOST",
-    "DASHBOARD_PORT",
-    "DASHBOARD_USERNAME",
-    "DASHBOARD_PASSWORD",
-]
-
-lines = []
-for key in ordered:
-    if key in values:
-        lines.append(f"{key}={values[key]}")
-for key in sorted(k for k in values if k not in ordered):
-    lines.append(f"{key}={values[key]}")
-
-path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-PY
-unset OPENAI_KEY
+.venv/bin/python scripts/configure_env.py --openai
 .venv/bin/python scripts/run_agents.py --use-llm
 sudo systemctl restart commerce-dashboard.service
 ```
@@ -104,7 +65,7 @@ sudo systemctl restart commerce-dashboard.service
 Check:
 
 ```bash
-grep -E '^(LLM_PROVIDER|OPENAI_API_KEY)=' .env | sed 's/OPENAI_API_KEY=.*/OPENAI_API_KEY=***masked***/'
+.venv/bin/python scripts/configure_env.py --show
 ```
 
 ## 3. Merge Claude Client Ops Team
