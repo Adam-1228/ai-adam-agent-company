@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -13,6 +14,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 ENV_PATH = ROOT / ".env"
+COMMERCE_ENV_PATH = ROOT.parent / "commerce-agent-team" / ".env"
 MODEL_CONFIG_PATH = ROOT / "config" / "agent_models.json"
 RUNTIME_DIR = ROOT / "runtime"
 LLM_USAGE_LOG = RUNTIME_DIR / "llm_usage.jsonl"
@@ -23,7 +25,12 @@ DEFAULT_MAX_RETRIES = 2
 DEFAULT_MAX_TOKENS = 1024
 
 
-def load_dotenv(path: Path = ENV_PATH) -> None:
+def configure_stdout() -> None:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+
+def load_dotenv_file(path: Path) -> None:
     if not path.exists():
         return
     for raw_line in path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -34,11 +41,20 @@ def load_dotenv(path: Path = ENV_PATH) -> None:
         os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
+def load_dotenv(path: Path = ENV_PATH) -> None:
+    # Client-ops may have its own .env. If it does not, reuse the commerce
+    # server .env as a local operational fallback so both teams can share the
+    # same OpenAI key without committing or duplicating secrets.
+    load_dotenv_file(path)
+    load_dotenv_file(COMMERCE_ENV_PATH)
+
+
 def load_model_config() -> dict:
     if not MODEL_CONFIG_PATH.exists():
         return {
             "default_provider": "mock",
             "default_model": "claude-sonnet-4-6",
+            "default_openai_model": "gpt-5.4-mini",
             "defaults": {"timeout_seconds": DEFAULT_TIMEOUT, "max_retries": DEFAULT_MAX_RETRIES},
             "agents": {},
         }
@@ -55,7 +71,17 @@ def agent_model(agent_id: str) -> dict:
     model = agent.get("model") or config.get("default_model", "claude-sonnet-4-6")
     temperature = float(agent.get("temperature", 0.2))
 
+    if provider == "openai":
+        model = (
+            os.environ.get("OPENAI_MODEL")
+            or agent.get("openai_model")
+            or config.get("default_openai_model")
+            or "gpt-5.4-mini"
+        )
+
     if env_override and env_override == "mock":
+        fallback_provider, fallback_model = None, None
+    elif env_override and env_override == "openai":
         fallback_provider, fallback_model = None, None
     else:
         fallback_provider = agent.get("fallback_provider")
@@ -157,8 +183,15 @@ def mock_response(agent_id: str, model: str, prompt: str) -> dict:
     digest = hashlib.sha256(prompt.encode("utf-8", errors="replace")).hexdigest()[:8]
     text = (
         f"[MOCK::{agent_id}::{digest}]\n"
-        "이것은 mock 응답입니다. 실 API 키 없이 흐름 검증용으로 생성되었습니다.\n"
-        "실제 LLM 호출이 필요하면 .env에 ANTHROPIC_API_KEY 또는 GEMINI_API_KEY를 설정하세요.\n"
+        "\n"
+        "## 요약\n"
+        "- 이것은 mock 응답입니다. 실 API 키 없이 흐름 검증용으로 생성되었습니다.\n"
+        "- 실제 LLM 호출이 필요하면 .env에 ANTHROPIC_API_KEY, GEMINI_API_KEY 또는 OPENAI_API_KEY를 설정하세요.\n"
+        "\n"
+        "HANDOFF\n"
+        "- Next owner: 05_coordinator_qa\n"
+        "- Required evidence: mock validation only\n"
+        "- Recommended action: REVIEW\n"
     )
     return _result(text=text, model=f"mock:{model}", provider="mock", used=True)
 
@@ -254,6 +287,54 @@ def call_google(
     return _result(text=text, model=model, provider="google", used=True, usage=usage)
 
 
+def extract_openai_text(payload: dict) -> str:
+    if isinstance(payload.get("output_text"), str):
+        return payload["output_text"].strip()
+
+    chunks: list[str] = []
+    for item in payload.get("output", []) or []:
+        if not isinstance(item, dict):
+            continue
+        for content in item.get("content", []) or []:
+            if isinstance(content, dict) and isinstance(content.get("text"), str):
+                chunks.append(content["text"])
+    return "\n".join(chunks).strip()
+
+
+def call_openai(
+    *,
+    api_key: str,
+    base_url: str,
+    model: str,
+    temperature: float,
+    instructions: str,
+    prompt: str,
+    timeout: int,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
+) -> dict:
+    url = f"{base_url.rstrip('/')}/responses"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    body: dict = {
+        "model": model,
+        "instructions": instructions,
+        "input": [{"role": "user", "content": [{"type": "input_text", "text": prompt}]}],
+        "temperature": temperature,
+        "max_output_tokens": max_tokens,
+    }
+
+    payload = _http_post(url, headers, body, timeout)
+    usage_raw = payload.get("usage") or {}
+    usage = {
+        "input_tokens": usage_raw.get("input_tokens"),
+        "output_tokens": usage_raw.get("output_tokens"),
+        "total_tokens": usage_raw.get("total_tokens"),
+    }
+    return _result(text=extract_openai_text(payload), model=model, provider="openai", used=True, usage=usage)
+
+
 def _call_one(
     *,
     provider: str,
@@ -282,6 +363,15 @@ def _call_one(
             api_key=api_key, base_url=base_url, model=model, temperature=temperature,
             instructions=instructions, prompt=prompt, timeout=timeout,
         )
+    elif provider == "openai":
+        api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+        if not api_key:
+            return _result(text="", model=model, provider=provider, used=False, error="OPENAI_API_KEY is not set")
+        base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        caller = lambda: call_openai(
+            api_key=api_key, base_url=base_url, model=model, temperature=temperature,
+            instructions=instructions, prompt=prompt, timeout=timeout,
+        )
     else:
         return _result(text="", model=model, provider=provider, used=False, error=f"Unsupported provider: {provider}")
 
@@ -306,6 +396,7 @@ def _no_api_keys_present() -> bool:
     return not (
         os.environ.get("ANTHROPIC_API_KEY", "").strip()
         or os.environ.get("GEMINI_API_KEY", "").strip()
+        or os.environ.get("OPENAI_API_KEY", "").strip()
     )
 
 
@@ -381,6 +472,7 @@ __all__ = [
     "agent_model",
     "call_anthropic",
     "call_google",
+    "call_openai",
     "complete",
     "load_dotenv",
     "load_model_config",
@@ -392,6 +484,7 @@ __all__ = [
 if __name__ == "__main__":
     import argparse
 
+    configure_stdout()
     parser = argparse.ArgumentParser(description="Smoke-test the client-ops LLM client.")
     parser.add_argument("--agent", default="01_onboarding_manager")
     parser.add_argument("--prompt", default="자기 소개를 한 줄로 해줘.")

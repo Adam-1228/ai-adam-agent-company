@@ -139,6 +139,10 @@ def policy_check(agent_id: str, packet: dict) -> dict | None:
                     "자동 응답: 보내지 않음\n"
                     "처리: 05_coordinator_qa 경유로 Adam에게 즉시 통지\n"
                     "근거: shared/handoff_contract.md / 03_cs_manager/persona.md §즉시 사람 에스컬레이션\n"
+                    "\nHANDOFF\n"
+                    "- Next owner: 05_coordinator_qa\n"
+                    "- Required evidence: escalation card + source task packet\n"
+                    "- Recommended action: ESCALATE_TO_ADAM\n"
                 ),
                 "model": "policy:p0-escalation",
                 "provider": "policy",
@@ -168,6 +172,10 @@ def policy_check(agent_id: str, packet: dict) -> dict | None:
                     "route_to: 03_cs_manager\n"
                     "reason: 박실행은 환불/결제/계약/법적/의료 영역을 처리하지 않습니다.\n"
                     "근거: shared/handoff_contract.md / 02_ops_operator/persona.md §하지 않는 일\n"
+                    "\nHANDOFF\n"
+                    "- Next owner: 03_cs_manager\n"
+                    "- Required evidence: rejected task packet + trigger keywords\n"
+                    "- Recommended action: REVIEW\n"
                 ),
                 "model": "policy:ops-rejection",
                 "provider": "policy",
@@ -339,6 +347,9 @@ def run(*, agent_id: str, task_id: str, use_llm: bool, dry_run: bool) -> dict:
 
 
 def main() -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(description="Run a single client-ops agent for one task.")
     parser.add_argument("agent_id", help=f"One of: {', '.join(AGENT_NAMES_KR)}")
     parser.add_argument("--task-id", required=True, help="TASK ID found in tasks/active.md or tasks/backlog.md")

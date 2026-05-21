@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -334,6 +335,9 @@ def simulate(*, week: int, client_ref: str, use_llm: bool) -> tuple[Path, Path, 
 
 
 def main() -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(description="Run a 7-day client-ops simulation.")
     parser.add_argument("--simulate-week", type=int, required=True, help="Week number (used in log/report filename).")
     parser.add_argument("--client-ref", required=True, help="Synthetic client reference, e.g., sample_dental_clinic_001.")

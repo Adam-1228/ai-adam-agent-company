@@ -98,6 +98,9 @@ def compose_system_prompt(agent_id: str) -> dict:
 
 
 def main() -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(description="Compose a system prompt for one client-ops agent.")
     parser.add_argument("agent_id", help=f"One of: {', '.join(AGENT_NAMES_KR)}")
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of plain text.")

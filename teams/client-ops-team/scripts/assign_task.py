@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -73,6 +74,9 @@ def build_block(*, task_id: str, agent_id: str, task_code: str, priority: str, d
 
 
 def main() -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(
         description="Append a v1 task packet to the client-ops backlog and agent inbox.",
         usage=usage(),
