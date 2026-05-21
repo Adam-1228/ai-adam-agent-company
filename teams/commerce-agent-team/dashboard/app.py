@@ -13,8 +13,10 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 
+DASHBOARD_DIR = Path(__file__).resolve().parent
 ROOT = Path(__file__).resolve().parents[1]
 CLIENT_OPS_ROOT = ROOT.parent / "client-ops-team"
+ASSETS = DASHBOARD_DIR / "assets"
 REPORTS = ROOT / "reports"
 WORKFORCE = ROOT / "workforce"
 RUNS = WORKFORCE / "runs"
@@ -52,6 +54,18 @@ COMPANY_AGENTS = [
 TEAM_LABELS = {
     "commerce": "커머스 발굴 검수팀",
     "client_ops": "클라이언트 운영팀",
+}
+OFFICE_SEATS = {
+    "client_ops:01_onboarding_manager": ("47.0%", "42.0%"),
+    "client_ops:02_ops_operator": ("57.3%", "42.0%"),
+    "client_ops:03_cs_manager": ("67.7%", "42.0%"),
+    "client_ops:04_data_analyst": ("78.0%", "42.0%"),
+    "client_ops:05_coordinator_qa": ("88.3%", "42.0%"),
+    "commerce:01_market_scout": ("47.0%", "73.5%"),
+    "commerce:02_margin_analyst": ("57.3%", "73.5%"),
+    "commerce:03_risk_guardian": ("67.7%", "73.5%"),
+    "commerce:04_listing_builder": ("78.0%", "73.5%"),
+    "commerce:05_ops_manager": ("88.3%", "73.5%"),
 }
 
 OFFICE_LAYOUT = {
@@ -1119,6 +1133,60 @@ def html_page(title: str, body: str) -> str:
       padding: 14px;
       overflow: hidden;
     }}
+    .office-map-visual {{
+      border: 1px solid #b8c3cf;
+      border-radius: 8px;
+      background: #dfe7ed;
+      overflow: hidden;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.5);
+    }}
+    .office-map-stage {{
+      position: relative;
+      width: 100%;
+    }}
+    .office-map-image {{
+      display: block;
+      width: 100%;
+      height: auto;
+    }}
+    .seat-marker {{
+      position: absolute;
+      left: var(--seat-x);
+      top: var(--seat-y);
+      width: min(132px, 11.5%);
+      min-width: 96px;
+      transform: translate(-50%, -50%);
+      border: 1px solid rgba(15, 118, 110, .24);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .88);
+      color: var(--text);
+      padding: 7px 8px;
+      box-shadow: 0 8px 20px rgba(31,41,51,.14);
+      backdrop-filter: blur(3px);
+    }}
+    .seat-marker.client_ops {{
+      border-color: rgba(54, 95, 145, .24);
+    }}
+    .seat-marker strong {{
+      display: block;
+      font-size: 13px;
+      line-height: 1.2;
+      margin-bottom: 3px;
+    }}
+    .seat-marker span {{
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }}
+    .seat-marker .badge {{
+      display: inline-flex;
+      min-height: 20px;
+      margin-top: 5px;
+      padding: 0 6px;
+      font-size: 11px;
+    }}
     .office-wing-title {{
       margin: 2px 2px 10px;
       color: #41505f;
@@ -1484,6 +1552,22 @@ def html_page(title: str, body: str) -> str:
       .office-shell {{
         padding: 10px;
       }}
+      .office-map-visual {{
+        overflow-x: auto;
+      }}
+      .office-map-stage {{
+        width: 860px;
+      }}
+      .seat-marker {{
+        min-width: 88px;
+        padding: 6px;
+      }}
+      .seat-marker strong {{
+        font-size: 12px;
+      }}
+      .seat-marker span {{
+        font-size: 10px;
+      }}
       .office-floor {{
         grid-template-columns: 1fr;
         grid-template-rows: auto;
@@ -1613,59 +1697,53 @@ def render_client_room() -> str:
     """
 
 
+def render_office_marker(team: str, agent_id: str, title: str, role: str, latest_run: Path | None) -> str:
+    x, y = OFFICE_SEATS[f"{team}:{agent_id}"]
+    state = company_agent_state(team, agent_id, latest_run)
+    return f"""
+      <div class="seat-marker {html.escape(team)}" style="--seat-x: {html.escape(x)}; --seat-y: {html.escape(y)};">
+        <strong>{html.escape(title)}</strong>
+        <span>{html.escape(role)}</span>
+        <span class="badge {html.escape(state["tone"])}">{html.escape(state["label"])}</span>
+      </div>
+    """
+
+
+def render_office_map(latest_run: Path | None) -> str:
+    markers = [
+        render_office_marker(team, agent_id, title, role, latest_run)
+        for team, agent_id, title, role, _description in COMPANY_AGENTS
+    ]
+    return f"""
+      <section class="office-shell">
+        <div class="office-map-visual" aria-label="10명 AI 에이전트 사무실 배치도">
+          <div class="office-map-stage">
+            <img class="office-map-image" src="/assets/office-map.png" alt="10개 PC 좌석이 있는 AI 에이전트 사무실 지도">
+            {''.join(markers)}
+          </div>
+        </div>
+      </section>
+    """
+
+
 def render_office() -> str:
     runs = list_runs()
     latest_run = runs[0] if runs else None
     latest_meta = read_run_metadata(latest_run) if latest_run else {}
-    commerce_rooms = [
-        render_office_room("commerce", agent_id, title, role, description, latest_run)
-        for agent_id, title, role, description in AGENTS
-    ]
-    client_rooms = [
-        render_office_room("client_ops", agent_id, title, role, description, latest_run)
-        for agent_id, title, role, description in CLIENT_OPS_AGENTS
-    ]
     body = f"""
       <section class="office-hero">
         <h2>AI 에이전트 오피스</h2>
         <p class="muted">
-          10명의 AI 직원이 어떤 방에서 어떤 업무를 맡는지 한눈에 보는 시각화 화면입니다.
+          10명의 AI 직원이 실제 사무실 배치처럼 어떤 좌석에서 어떤 업무를 맡는지 한눈에 보는 화면입니다.
           운영 상태를 설명하거나, 자동화 회사를 제품처럼 보여줄 때 사용할 수 있습니다.
         </p>
         <p class="muted">최신 실행: {html.escape(str(latest_meta.get("run_id", "아직 없음")))}</p>
       </section>
-      <section class="office-shell">
-        <div class="office-wing-title">클라이언트 운영팀</div>
-        <div class="office-floor client-wing">
-          {client_rooms[0]}
-          {client_rooms[1]}
-          {client_rooms[2]}
-          <div class="hallway">
-            <div class="handoff-doc" aria-hidden="true"></div>
-            Client Ops Control Hall
-          </div>
-          {client_rooms[3]}
-          {client_rooms[4]}
-          {render_client_room()}
-        </div>
-        <div class="office-wing-title">커머스 발굴 검수팀</div>
-        <div class="office-floor">
-          {commerce_rooms[0]}
-          {commerce_rooms[1]}
-          {commerce_rooms[2]}
-          <div class="hallway">
-            <div class="handoff-doc" aria-hidden="true"></div>
-            Commerce Handoff Hall
-          </div>
-          {render_client_room()}
-          {commerce_rooms[3]}
-          {commerce_rooms[4]}
-        </div>
-      </section>
+      {render_office_map(latest_run)}
       <section class="office-legend">
-        <div class="legend-item"><strong>초록 배지</strong><span class="muted">최근 산출물이나 운영 로그가 확인된 직원입니다.</span></div>
-        <div class="legend-item"><strong>문서 이동</strong><span class="muted">팀 간 handoff가 검증 후 업무로 넘어가는 흐름을 뜻합니다.</span></div>
-        <div class="legend-item"><strong>10명 편제</strong><span class="muted">클라이언트 운영팀 5명과 커머스팀 5명이 같은 회사 안에서 움직입니다.</span></div>
+        <div class="legend-item"><strong>01-05</strong><span class="muted">클라이언트 운영팀: 온보딩, 자동화 실행, CS, 분석, QA</span></div>
+        <div class="legend-item"><strong>06-10</strong><span class="muted">커머스 발굴 검수팀: 탐색, 마진, 리스크, 리스팅, 운영 판단</span></div>
+        <div class="legend-item"><strong>상태 배지</strong><span class="muted">최근 산출물이나 운영 로그의 마지막 상태를 표시합니다.</span></div>
       </section>
     """
     return html_page("AI 에이전트 오피스", body)
@@ -1914,6 +1992,22 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         parsed = urlparse(self.path)
+        if parsed.path.startswith("/assets/"):
+            asset_name = Path(parsed.path.removeprefix("/assets/")).name
+            asset_path = ASSETS / asset_name
+            if not asset_path.is_file():
+                self.send_error(404)
+                return
+            body = asset_path.read_bytes()
+            content_type = "image/png" if asset_path.suffix.lower() == ".png" else "application/octet-stream"
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Cache-Control", "public, max-age=3600")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         if parsed.path == "/":
             content = render_dashboard()
         elif parsed.path == "/approvals":
