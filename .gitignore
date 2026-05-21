@@ -24,6 +24,8 @@ Thumbs.db
 teams/*/runtime/
 teams/*/reports/*
 !teams/*/reports/.gitkeep
+teams/*/logs/*
+!teams/*/logs/.gitkeep
 teams/*/workforce/runs/
 teams/*/workforce/reports/*.md
 teams/*/workforce/agents/*/outbox/

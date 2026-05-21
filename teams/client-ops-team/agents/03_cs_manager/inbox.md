@@ -46,3 +46,32 @@
 아직 배정된 작업 없음.
 
 (샘플은 `tasks/done.md`의 에스컬레이션 사례 참고)
+
+
+## CS-001-test-refund
+
+TASK ID: CS-001-test-refund
+TASK CODE: CS-INCOMING
+ASSIGNEE: 03_cs_manager (CS Manager - 이용대)
+PRIORITY: P0
+REQUESTED BY: assign_task.py
+CREATED AT: 2026-05-21 19:48:43
+DUE: 확인 필요
+
+CONTEXT:
+- 고객이 카카오 알림톡으로 '환불해주세요'라고 메시지를 보냈습니다.
+- 실고객 정보 사용 금지. 가상 식별자 또는 케이스 ID만 사용합니다.
+
+INPUTS:
+- 확인 필요
+
+EXPECTED OUTPUT:
+- output_template.md 형식을 준수
+
+GUARDRAILS:
+- 사람 승인 전 외부 발송 금지
+- 환불/계약/법적/의료/세무 키워드는 즉시 05_coordinator_qa 에스컬레이션
+
+HANDOFF:
+- Next owner: 확인 필요
+- Required evidence: 확인 필요

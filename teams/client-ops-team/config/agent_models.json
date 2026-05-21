@@ -1,26 +1,38 @@
 {
   "default_provider": "mock",
   "default_model": "claude-sonnet-4-6",
+  "defaults": {
+    "timeout_seconds": 60,
+    "max_retries": 2
+  },
   "agents": {
     "01_onboarding_manager": {
       "provider": "anthropic",
       "model": "claude-sonnet-4-6",
-      "temperature": 0.3
+      "temperature": 0.3,
+      "fallback_provider": "anthropic",
+      "fallback_model": "claude-haiku-4-5-20251001"
     },
     "02_ops_operator": {
       "provider": "google",
       "model": "gemini-2.0-flash",
-      "temperature": 0.0
+      "temperature": 0.0,
+      "fallback_provider": null,
+      "fallback_model": null
     },
     "03_cs_manager": {
       "provider": "anthropic",
       "model": "claude-sonnet-4-6",
-      "temperature": 0.2
+      "temperature": 0.2,
+      "fallback_provider": "anthropic",
+      "fallback_model": "claude-haiku-4-5-20251001"
     },
     "04_data_analyst": {
       "provider": "anthropic",
       "model": "claude-sonnet-4-6",
       "temperature": 0.2,
+      "fallback_provider": "anthropic",
+      "fallback_model": "claude-haiku-4-5-20251001",
       "code_assist": {
         "provider": "openai",
         "model": "gpt-5.4-mini"
@@ -29,7 +41,9 @@
     "05_coordinator_qa": {
       "provider": "anthropic",
       "model": "claude-opus-4-7",
-      "temperature": 0.1
+      "temperature": 0.1,
+      "fallback_provider": "anthropic",
+      "fallback_model": "claude-sonnet-4-6"
     }
   }
 }
