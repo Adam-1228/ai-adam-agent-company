@@ -93,6 +93,32 @@ ssh -L 8080:127.0.0.1:8080 ubuntu@YOUR_EC2_PUBLIC_IP
 
 그 뒤 브라우저에서 `http://127.0.0.1:8080`을 엽니다.
 
+## 4-1. 8080을 본인 IP만 허용하기
+
+현재 접속 공인 IP를 확인합니다.
+
+```bash
+curl https://api.ipify.org
+```
+
+예를 들어 공인 IP가 `59.13.218.189`라면 EC2 내부 방화벽에서 8080을 아래처럼 제한합니다.
+
+```bash
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow 22/tcp comment 'SSH'
+sudo ufw allow 80/tcp comment 'HTTP'
+sudo ufw allow 443/tcp comment 'HTTPS'
+sudo ufw allow from 59.13.218.189/32 to any port 8080 proto tcp comment 'Commerce dashboard ADAM IP'
+sudo ufw deny 8080/tcp comment 'Block dashboard other IPs'
+sudo ufw --force enable
+sudo ufw status numbered
+```
+
+AWS 보안 그룹에서도 8080의 source를 `0.0.0.0/0`에서 `본인공인IP/32`로 바꾸면 더 좋습니다.
+
+집/카페/핫스팟 변경으로 공인 IP가 바뀌면 8080 접속이 막힙니다. 이때는 SSH로 접속해서 기존 8080 allow rule을 삭제하고 새 IP로 다시 추가합니다.
+
 ## 5. systemd 자동 실행
 
 회사 repo root 기준으로 아래 파일들을 서버에 복사합니다.
