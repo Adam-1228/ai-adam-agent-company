@@ -1,0 +1,43 @@
+{
+  "contract_version": "2026-05-21.v1",
+  "handoff_id": "COM-COPS-2026-W21-001",
+  "direction": "commerce_to_client_ops",
+  "from_team": "commerce-agent-team",
+  "to_team": "client-ops-team",
+  "created_at": "2026-05-21T19:45:00+09:00",
+  "week": "2026-W21",
+  "source_agent": "05_ops_manager",
+  "signal_type": "market_trend",
+  "summary": "Low-risk desk organization bundles are worth mentioning as a weak trend in client ops reports.",
+  "confidence": "medium",
+  "requires_human_approval": true,
+  "dry_run_only": true,
+  "pii_check": {
+    "names_removed": true,
+    "contacts_removed": true,
+    "business_ids_removed": true,
+    "raw_messages_removed": true,
+    "amounts_indexed": true,
+    "medical_legal_tax_only_as_category": true
+  },
+  "review": {
+    "owner": "05_ops_manager",
+    "decision": "PASS",
+    "decision_reason": "Commerce run reference is included and no customer-level data is present."
+  },
+  "payload": {
+    "trend_name": "low-risk desk organization bundles",
+    "category": "office supplies",
+    "target_market": "coupang",
+    "confidence": "medium",
+    "evidence_ref": "RUN-20260521-191159",
+    "client_ops_use": [
+      "weekly_report_insight",
+      "onboarding_note"
+    ],
+    "forbidden_claims": [
+      "guaranteed demand",
+      "guaranteed conversion"
+    ]
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "contract_version": "2026-05-21.v1",
+  "handoff_id": "COPS-COM-2026-W21-001",
+  "direction": "client_ops_to_commerce",
+  "from_team": "client-ops-team",
+  "to_team": "commerce-agent-team",
+  "created_at": "2026-05-21T19:30:00+09:00",
+  "week": "2026-W21",
+  "source_agent": "04_data_analyst",
+  "signal_type": "demand_signal",
+  "summary": "Pet grooming customers ask more often about cleanup after service.",
+  "confidence": "medium",
+  "requires_human_approval": true,
+  "dry_run_only": true,
+  "pii_check": {
+    "names_removed": true,
+    "contacts_removed": true,
+    "business_ids_removed": true,
+    "raw_messages_removed": true,
+    "amounts_indexed": true,
+    "medical_legal_tax_only_as_category": true
+  },
+  "review": {
+    "owner": "05_coordinator_qa",
+    "decision": "PASS",
+    "decision_reason": "Only anonymized weekly aggregate signal is included."
+  },
+  "payload": {
+    "industry": "pet grooming",
+    "region": "Seoul",
+    "time_window": "2026-W21",
+    "sample_size_cases": 9,
+    "keyword_or_intent": "pet hair cleanup after grooming",
+    "category_hint": "pet supplies",
+    "target_market": "coupang",
+    "demand_index": 1.31,
+    "evidence_summary": "Anonymized weekly request volume increased against baseline.",
+    "exclusion_terms": [
+      "medical claim",
+      "brand name"
+    ]
+  }
+}

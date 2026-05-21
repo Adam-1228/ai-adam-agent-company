@@ -1,5 +1,13 @@
 # Handoff To Commerce
 
+Canonical shared contract:
+
+```text
+shared/handoff_contracts/commerce_client_ops_contract.md
+```
+
+This team-local file is explanatory. The root shared contract is the source of truth for schema validation.
+
 ```text
 HANDOFF ID:
 FROM:
