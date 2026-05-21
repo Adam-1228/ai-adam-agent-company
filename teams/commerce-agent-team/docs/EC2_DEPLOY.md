@@ -39,6 +39,13 @@ nano .env
 LLM_PROVIDER=mock
 ```
 
+대시보드 로그인을 켜려면 아래 값도 설정합니다.
+
+```text
+DASHBOARD_USERNAME=adam
+DASHBOARD_PASSWORD=strong-random-password
+```
+
 OpenAI API를 붙일 때:
 
 ```text

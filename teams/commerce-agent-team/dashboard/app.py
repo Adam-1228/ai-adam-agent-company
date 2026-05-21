@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import hmac
 import html
 import json
 import os
@@ -21,6 +23,18 @@ AGENTS = [
     ("04_listing_builder", "Listing Builder", "Draft product titles and listing pages"),
     ("05_ops_manager", "Ops Manager", "Coordinate final decisions"),
 ]
+
+
+def load_env_file() -> None:
+    env_path = ROOT / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
 def read_text(path: Path, fallback: str = "") -> str:
@@ -315,7 +329,38 @@ def render_run(run_id: str) -> str:
 
 
 class Handler(BaseHTTPRequestHandler):
+    def is_authorized(self) -> bool:
+        username = os.getenv("DASHBOARD_USERNAME", "").strip()
+        password = os.getenv("DASHBOARD_PASSWORD", "").strip()
+        if not username or not password:
+            return True
+
+        header = self.headers.get("Authorization", "")
+        if not header.startswith("Basic "):
+            return False
+        try:
+            decoded = base64.b64decode(header.removeprefix("Basic ").strip()).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return False
+        supplied_username, separator, supplied_password = decoded.partition(":")
+        if not separator:
+            return False
+        return hmac.compare_digest(supplied_username, username) and hmac.compare_digest(supplied_password, password)
+
+    def request_auth(self) -> None:
+        body = b"Authentication required."
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="Commerce Agent Dashboard"')
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self) -> None:
+        if not self.is_authorized():
+            self.request_auth()
+            return
+
         parsed = urlparse(self.path)
         if parsed.path == "/":
             content = render_dashboard()
@@ -342,6 +387,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
+    load_env_file()
+
     parser = argparse.ArgumentParser(description="Run the commerce agent dashboard.")
     parser.add_argument("--host", default=os.getenv("DASHBOARD_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.getenv("DASHBOARD_PORT", "8080")))
