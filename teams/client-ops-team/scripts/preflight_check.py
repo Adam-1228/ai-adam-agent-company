@@ -800,6 +800,151 @@ def section_13_seller_readiness() -> list[CheckResult]:
 
 
 # =========================================================================
+# Section 14 — Commerce handoff importer
+# =========================================================================
+
+def _make_minimal_handoff(*, dry_run_only: bool, submit_status: str,
+                          approval_status: str) -> dict:
+    """Build a minimal v2 handoff for in-memory smoke tests of the importer."""
+    return {
+        "contract_version": "2026-05-22.v2",
+        "handoff_id": "PREFLIGHT-SMOKE-001",
+        "direction": "commerce_to_client_ops",
+        "from_team": "commerce-agent-team",
+        "to_team": "client-ops-team",
+        "created_at": "2026-05-22T10:00:00+09:00",
+        "week": "2026-W21",
+        "source_agent": "05_ops_manager",
+        "signal_type": "channel_submission_ready",
+        "summary": "preflight smoke",
+        "confidence": "medium",
+        "requires_human_approval": True,
+        "dry_run_only": dry_run_only,
+        "pii_check": {k: True for k in [
+            "names_removed", "contacts_removed", "business_ids_removed",
+            "raw_messages_removed", "amounts_indexed",
+            "medical_legal_tax_only_as_category",
+        ]},
+        "review": {"owner": "05_ops_manager", "decision": "PASS",
+                   "decision_reason": "preflight smoke"},
+        "payload": {
+            "run_id": "PREFLIGHT-SMOKE",
+            "opportunity_id": "PREFLIGHT-OPP",
+            "package_paths": [
+                "teams/commerce-agent-team/runtime/channel_submissions/pending/preflight-smoke_PREFLIGHT-OPP_coupang.json",
+            ],
+            "channels": ["coupang"],
+            "validation_status": "draft_validated_locally",
+            "approval_status": approval_status,
+            "submit_status": submit_status,
+            "risk_review": {"blocked": False, "risk_level": "review_required", "hard_stops": []},
+            "forbidden_claims_present": False,
+            "supplier_evidence_present": True,
+            "category_match_seller_scope": False,
+            "seller_scope_status": "not_connected_yet",
+            "qa_route": ["05_coordinator_qa"],
+            "do_not_disclose": ["api_key_value", "vendor_id_value"],
+        },
+    }
+
+
+def section_14_commerce_importer() -> list[CheckResult]:
+    out: list[CheckResult] = []
+    importer = ROOT / "scripts" / "import_commerce_handoff.py"
+
+    # 14.1 importer file exists
+    if not importer.exists():
+        out.append(CheckResult("§14.1", "import_commerce_handoff.py 존재", FAIL,
+                               detail=f"missing: {importer.relative_to(ROOT)}"))
+        return out
+    out.append(CheckResult("§14.1", "import_commerce_handoff.py 존재", PASS))
+
+    # 14.2 importer is importable + exposes process()/decide_qa()/ImportResult
+    try:
+        import importlib
+        mod = importlib.import_module("import_commerce_handoff")
+        for sym in ("process", "decide_qa", "ImportResult",
+                    "validate_envelope", "validate_channel_submission_ready",
+                    "scan_for_live_mode_and_secrets"):
+            if not hasattr(mod, sym):
+                out.append(CheckResult("§14.2", "importer 핵심 심볼", FAIL,
+                                       detail=f"missing symbol: {sym}"))
+                return out
+        out.append(CheckResult("§14.2", "importer 핵심 심볼", PASS,
+                               detail="process, decide_qa, ImportResult, 3 validators"))
+    except Exception as exc:
+        out.append(CheckResult("§14.2", "importer import 가능", FAIL, detail=str(exc)))
+        return out
+
+    # 14.3 contract version sanity
+    if getattr(mod, "CONTRACT_VERSION", None) != "2026-05-22.v2":
+        out.append(CheckResult("§14.3", "contract_version 상수", FAIL,
+                               detail=f"got {getattr(mod, 'CONTRACT_VERSION', None)!r}"))
+    else:
+        out.append(CheckResult("§14.3", "contract_version 상수 (2026-05-22.v2)", PASS))
+
+    # 14.4 in-memory smoke: a clean handoff should pass envelope + signal validators
+    ok = _make_minimal_handoff(
+        dry_run_only=True, submit_status="not_submitted",
+        approval_status="adam_approval_required",
+    )
+    result = mod.ImportResult(
+        handoff_id=ok["handoff_id"], signal_type=ok["signal_type"], direction=ok["direction"],
+    )
+    mod.validate_envelope(ok, result)
+    mod.validate_channel_submission_ready(ok, result)
+    mod.scan_for_live_mode_and_secrets(ok, result)
+    qa = mod.decide_qa(result)
+    # package files don't exist locally → W104 → QA_HOLD_NEEDS_INFO is expected
+    if qa in ("QA_PASS_ESCALATE_TO_ADAM", "QA_HOLD_NEEDS_INFO") and not result.blocking:
+        out.append(CheckResult("§14.4", "valid handoff in-memory smoke", PASS,
+                               detail=f"qa={qa} blocking=0 warn={len(result.warns)}"))
+    else:
+        out.append(CheckResult("§14.4", "valid handoff in-memory smoke", FAIL,
+                               detail=f"qa={qa} blocking={len(result.blocking)}"))
+
+    # 14.5 in-memory smoke: a live-mode handoff MUST be rejected
+    bad = _make_minimal_handoff(
+        dry_run_only=False, submit_status="submitted",
+        approval_status="approved_and_published",
+    )
+    result = mod.ImportResult(
+        handoff_id=bad["handoff_id"], signal_type=bad["signal_type"], direction=bad["direction"],
+    )
+    mod.validate_envelope(bad, result)
+    mod.validate_channel_submission_ready(bad, result)
+    mod.scan_for_live_mode_and_secrets(bad, result)
+    qa = mod.decide_qa(result)
+    expected_blocking_codes = {"E007_NOT_DRY_RUN", "E102_APPROVAL_STATUS",
+                               "E103_SUBMIT_STATUS", "E201_LIVE_MODE_INDICATOR"}
+    actual_codes = {f.code for f in result.blocking}
+    if qa == "QA_REJECT_RETURN_TO_COMMERCE" and expected_blocking_codes <= actual_codes:
+        out.append(CheckResult("§14.5", "live-mode handoff is rejected", PASS,
+                               detail=f"qa={qa} blocking_codes={sorted(actual_codes)}"))
+    else:
+        out.append(CheckResult("§14.5", "live-mode handoff is rejected", FAIL,
+                               detail=f"qa={qa} missing_codes={sorted(expected_blocking_codes - actual_codes)}"))
+
+    # 14.6 runtime/commerce_handoffs is gitignored
+    try:
+        result_proc = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "check-ignore", "-v",
+             "teams/client-ops-team/runtime/commerce_handoffs/qa_queue.md"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result_proc.returncode == 0:
+            out.append(CheckResult("§14.6", "runtime/commerce_handoffs gitignore 보호", PASS))
+        else:
+            out.append(CheckResult("§14.6", "runtime/commerce_handoffs gitignore 보호", FAIL,
+                                   detail="루트 .gitignore의 teams/*/runtime/ 규칙으로 보호되어야 함"))
+    except Exception as exc:
+        out.append(CheckResult("§14.6", "runtime/commerce_handoffs gitignore 보호", WARN,
+                               detail=str(exc)))
+
+    return out
+
+
+# =========================================================================
 # Dispatcher
 # =========================================================================
 
@@ -817,6 +962,7 @@ SECTIONS: dict[int, tuple[str, Callable[[], list[CheckResult]]]] = {
     11: ("사람 운영 준비", section_11_human_ops),
     12: ("최종 승인", section_12_signoff),
     13: ("판매자 계정 / 채널 준비", section_13_seller_readiness),
+    14: ("commerce handoff importer", section_14_commerce_importer),
 }
 
 

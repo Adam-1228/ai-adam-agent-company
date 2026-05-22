@@ -38,6 +38,7 @@ Client Ops must pass this checklist before handling real customers.
 | §11 | 사람 운영 준비 | **[MANUAL]** | 조직 합의 사항 (정총괄 + Adam SLA 등) | 운영자 별도 기록 |
 | §12 | 최종 승인 | **[MANUAL]** | Adam 서명 (본 문서 하단) | 본 문서 하단 |
 | §13 | 판매자 계정 / 채널 준비 | **[PARTIAL]** | `python scripts/preflight_check.py --section 13` (실 계정/API 키/계좌는 SKIP_MANUAL) | `reports/preflight_*.md` |
+| §14 | commerce handoff importer | **[AUTO]** | `python scripts/preflight_check.py --section 14` + `python scripts/import_commerce_handoff.py <handoff.json>` | `reports/preflight_*.md`, `runtime/commerce_handoffs/qa_queue.md` |
 
 전체 자동 점검:
 
