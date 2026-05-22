@@ -1,0 +1,11 @@
+[Unit]
+Description=Poll commerce handoff packets for Client Ops every 5 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+Persistent=true
+Unit=client-ops-commerce-handoff-watch.service
+
+[Install]
+WantedBy=timers.target

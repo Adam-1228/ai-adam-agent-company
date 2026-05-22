@@ -11,8 +11,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_DIR = ROOT / "runtime" / "client_ops_handoffs"
 TASKS_PATH = RUNTIME_DIR / "commerce_tasks.md"
-CURRENT_CONTRACT_VERSION = "2026-05-22.v2"
-SUPPORTED_CONTRACT_VERSIONS = {"2026-05-21.v1", CURRENT_CONTRACT_VERSION}
+CURRENT_CONTRACT_VERSION = "2026-05-22.v2.1"
+SUPPORTED_CONTRACT_VERSIONS = {"2026-05-21.v1", "2026-05-22.v2", CURRENT_CONTRACT_VERSION}
 
 CLIENT_TO_COMMERCE_TYPES = {
     "operational_performance": "02_margin_analyst",
@@ -118,8 +118,8 @@ def validate_handoff(handoff: dict[str, Any]) -> str:
     require(signal_type in CLIENT_TO_COMMERCE_TYPES, f"unsupported signal_type: {signal_type}")
     if signal_type in V2_OPERATIONAL_SIGNALS:
         require(
-            handoff["contract_version"] == CURRENT_CONTRACT_VERSION,
-            f"{signal_type} requires contract_version {CURRENT_CONTRACT_VERSION}",
+            handoff["contract_version"] in {"2026-05-22.v2", CURRENT_CONTRACT_VERSION},
+            f"{signal_type} requires contract_version 2026-05-22.v2 or {CURRENT_CONTRACT_VERSION}",
         )
 
     review = handoff["review"]

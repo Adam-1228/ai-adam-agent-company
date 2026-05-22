@@ -25,6 +25,8 @@ RUNTIME = ROOT / "runtime"
 LLM_USAGE_LOG = RUNTIME / "llm_usage.jsonl"
 CLIENT_OPS_HANDOFFS = RUNTIME / "client_ops_handoffs"
 COMMERCE_TO_CLIENT_OPS_HANDOFFS = RUNTIME / "commerce_to_client_ops_handoffs"
+CLIENT_OPS_COMMERCE_HANDOFFS = CLIENT_OPS_ROOT / "runtime" / "commerce_handoffs"
+CLIENT_OPS_QA_QUEUE = CLIENT_OPS_COMMERCE_HANDOFFS / "qa_queue.md"
 CLIENT_OPS_LOGS = CLIENT_OPS_ROOT / "logs"
 APPROVALS_PATH = RUNTIME / "approval_decisions.json"
 APPROVAL_LOG = RUNTIME / "approval_log.jsonl"
@@ -40,6 +42,7 @@ CHANNEL_VALIDATION_SUMMARY = RUNTIME / "channel_submissions" / "latest_validatio
 CHANNEL_VALIDATION_REPORT = REPORTS / "latest_channel_validation.md"
 COMMERCE_HANDOFF_VALIDATION_SUMMARY = RUNTIME / "commerce_handoffs" / "latest_validation.json"
 COMMERCE_HANDOFF_VALIDATION_REPORT = REPORTS / "latest_commerce_handoff_validation.md"
+CLIENT_OPS_HANDOFF_WATCH_REPORT = CLIENT_OPS_REPORTS / "latest_commerce_handoff_watch.md"
 
 COMMERCE_AGENTS = [
     ("01_market_scout", "시장 탐색가", "상품 기회 발굴", "수요 신호와 카테고리 후보를 찾습니다."),
@@ -271,8 +274,14 @@ def handoff_summary() -> dict[str, str]:
         if COMMERCE_TO_CLIENT_OPS_HANDOFFS.exists()
         else 0
     )
+    qa_received = (
+        len([p for p in CLIENT_OPS_COMMERCE_HANDOFFS.glob("*.json") if p.is_file()])
+        if CLIENT_OPS_COMMERCE_HANDOFFS.exists()
+        else 0
+    )
     task_log = "있음" if (CLIENT_OPS_HANDOFFS / "commerce_tasks.md").exists() else "없음"
-    return {"received": str(received), "sent": str(sent), "task_log": task_log}
+    qa_queue = "있음" if CLIENT_OPS_QA_QUEUE.exists() else "없음"
+    return {"received": str(received), "sent": str(sent), "qa_received": str(qa_received), "task_log": task_log, "qa_queue": qa_queue}
 
 
 def client_ops_log_events() -> list[dict]:
@@ -875,6 +884,7 @@ def render_health_panel() -> str:
         <div class="kv"><span>Client Ops 로그</span><strong>{client_log_count}</strong></div>
         <div class="kv"><span>수신 handoff</span><strong>{html.escape(handoff["received"])}</strong></div>
         <div class="kv"><span>발행 handoff</span><strong>{html.escape(handoff["sent"])}</strong></div>
+        <div class="kv"><span>QA 수신 handoff</span><strong>{html.escape(handoff["qa_received"])}</strong></div>
         <div class="kv"><span>handoff 작업 로그</span><strong>{html.escape(handoff["task_log"])}</strong></div>
         <div class="kv"><span>디스크 사용률</span><strong>{html.escape(disk["used_pct"])}</strong></div>
         <div class="kv"><span>남은 디스크</span><strong>{html.escape(disk["free_gb"])}</strong></div>
@@ -1985,7 +1995,8 @@ def render_client_room() -> str:
         <div class="office-status">
           <strong>외부 팀 handoff</strong>
           <span>commerce 팀으로 넘기는 검수 입구</span>
-          <span>수신 {html.escape(handoff["received"])}건 · 발행 {html.escape(handoff["sent"])}건 · 작업 로그 {html.escape(handoff["task_log"])}</span>
+          <span>수신 {html.escape(handoff["received"])}건 · 발행 {html.escape(handoff["sent"])}건 · QA 수신 {html.escape(handoff["qa_received"])}건</span>
+          <span>작업 로그 {html.escape(handoff["task_log"])} · QA queue {html.escape(handoff["qa_queue"])}</span>
         </div>
         <div class="office-desk">
           <div class="monitor"></div>
@@ -2322,6 +2333,8 @@ def render_growth_pipeline() -> str:
     report = read_text(GROWTH_PIPELINE_REPORT, "아직 6단계 파이프라인 보고서가 없습니다.")
     handoff_validation = commerce_handoff_validation_summary()
     handoff_report = read_text(COMMERCE_HANDOFF_VALIDATION_REPORT, "아직 commerce handoff 검증 보고서가 없습니다.")
+    qa_queue = read_text(CLIENT_OPS_QA_QUEUE, "아직 Client Ops QA queue가 없습니다.")
+    watch_report = read_text(CLIENT_OPS_HANDOFF_WATCH_REPORT, "아직 Client Ops handoff watch 보고서가 없습니다.")
 
     approval_cards = []
     for item in summary.get("approval_required", []):
@@ -2424,6 +2437,16 @@ def render_growth_pipeline() -> str:
             <tbody>{''.join(handoff_findings)}</tbody>
           </table>
           <pre>{html.escape(handoff_report)}</pre>
+        </section>
+      </section>
+      <section class="panels">
+        <section class="panel">
+          <h2>Client Ops QA Queue</h2>
+          <pre>{html.escape(qa_queue)}</pre>
+        </section>
+        <section class="panel">
+          <h2>Client Ops Watch Report</h2>
+          <pre>{html.escape(watch_report)}</pre>
         </section>
       </section>
     """

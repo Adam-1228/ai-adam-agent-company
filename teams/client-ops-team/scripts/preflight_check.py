@@ -695,16 +695,16 @@ def section_13_seller_readiness() -> list[CheckResult]:
     else:
         contract_text = CONTRACT_DOC.read_text(encoding="utf-8")
         missing = [s for s in must_signals if s not in contract_text]
-        if "2026-05-22.v2" not in contract_text or missing:
+        if "2026-05-22.v2.1" not in contract_text or missing:
             out.append(CheckResult(
                 "§13.3b", "canonical handoff contract v2", FAIL,
-                detail=f"version_or_signals_missing: version={'2026-05-22.v2' in contract_text}, missing={missing}",
+                detail=f"version_or_signals_missing: version={'2026-05-22.v2.1' in contract_text}, missing={missing}",
                 fix_hint="shared/handoff_contracts/commerce_client_ops_contract.md를 v2 canonical로 갱신",
             ))
         else:
             out.append(CheckResult(
                 "§13.3b", "canonical handoff contract v2", PASS,
-                detail="2026-05-22.v2 + 4 channel signals present",
+                detail="2026-05-22.v2.1 + 4 channel signals present",
             ))
 
     # 13.4 Sensitive-value grep across the client-ops tree.
@@ -807,7 +807,7 @@ def _make_minimal_handoff(*, dry_run_only: bool, submit_status: str,
                           approval_status: str) -> dict:
     """Build a minimal v2 handoff for in-memory smoke tests of the importer."""
     return {
-        "contract_version": "2026-05-22.v2",
+        "contract_version": "2026-05-22.v2.1",
         "handoff_id": "PREFLIGHT-SMOKE-001",
         "direction": "commerce_to_client_ops",
         "from_team": "commerce-agent-team",
@@ -877,11 +877,13 @@ def section_14_commerce_importer() -> list[CheckResult]:
         return out
 
     # 14.3 contract version sanity
-    if getattr(mod, "CONTRACT_VERSION", None) != "2026-05-22.v2":
+    supported_versions = getattr(mod, "SUPPORTED_CONTRACT_VERSIONS", set())
+    current_version = getattr(mod, "CURRENT_CONTRACT_VERSION", None)
+    if current_version != "2026-05-22.v2.1" or "2026-05-22.v2" not in supported_versions:
         out.append(CheckResult("§14.3", "contract_version 상수", FAIL,
-                               detail=f"got {getattr(mod, 'CONTRACT_VERSION', None)!r}"))
+                               detail=f"current={current_version!r} supported={sorted(supported_versions)!r}"))
     else:
-        out.append(CheckResult("§14.3", "contract_version 상수 (2026-05-22.v2)", PASS))
+        out.append(CheckResult("§14.3", "contract_version 상수 (2026-05-22.v2.1 + v2 호환)", PASS))
 
     # 14.4 in-memory smoke: a clean handoff should pass envelope + signal validators
     ok = _make_minimal_handoff(
@@ -940,6 +942,35 @@ def section_14_commerce_importer() -> list[CheckResult]:
     except Exception as exc:
         out.append(CheckResult("§14.6", "runtime/commerce_handoffs gitignore 보호", WARN,
                                detail=str(exc)))
+
+    watcher = ROOT / "scripts" / "watch_commerce_handoffs.py"
+    if watcher.exists():
+        text = watcher.read_text(encoding="utf-8")
+        required = ["import_commerce_handoff.py", "watch_state.json", "latest_commerce_handoff_watch.md"]
+        missing = [marker for marker in required if marker not in text]
+        if missing:
+            out.append(CheckResult("§14.7", "commerce handoff watcher", FAIL,
+                                   detail=f"missing markers: {missing}"))
+        else:
+            out.append(CheckResult("§14.7", "commerce handoff watcher", PASS))
+    else:
+        out.append(CheckResult("§14.7", "commerce handoff watcher", FAIL,
+                               detail=f"missing: {watcher.relative_to(ROOT)}"))
+
+    systemd_dir = ROOT / "ops" / "systemd"
+    service = systemd_dir / "client-ops-commerce-handoff-watch.service"
+    timer = systemd_dir / "client-ops-commerce-handoff-watch.timer"
+    if service.exists() and timer.exists():
+        service_text = service.read_text(encoding="utf-8")
+        timer_text = timer.read_text(encoding="utf-8")
+        if "watch_commerce_handoffs.py --once" in service_text and "OnUnitActiveSec=5min" in timer_text:
+            out.append(CheckResult("§14.8", "commerce handoff watcher systemd", PASS))
+        else:
+            out.append(CheckResult("§14.8", "commerce handoff watcher systemd", FAIL,
+                                   detail="service/timer missing expected ExecStart or cadence"))
+    else:
+        out.append(CheckResult("§14.8", "commerce handoff watcher systemd", FAIL,
+                               detail="missing service or timer file"))
 
     return out
 

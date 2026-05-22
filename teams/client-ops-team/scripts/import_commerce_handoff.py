@@ -35,7 +35,8 @@ REPO_ROOT = ROOT.parent.parent
 RUNTIME_DIR = ROOT / "runtime" / "commerce_handoffs"
 QA_QUEUE_PATH = RUNTIME_DIR / "qa_queue.md"
 
-CONTRACT_VERSION = "2026-05-22.v2"
+CURRENT_CONTRACT_VERSION = "2026-05-22.v2.1"
+SUPPORTED_CONTRACT_VERSIONS = {"2026-05-22.v2", CURRENT_CONTRACT_VERSION}
 EXPECTED_DIRECTION = "commerce_to_client_ops"
 EXPECTED_TO_TEAM = "client-ops-team"
 EXPECTED_FROM_TEAM = "commerce-agent-team"
@@ -145,9 +146,9 @@ class ImportResult:
 
 def validate_envelope(handoff: dict, result: ImportResult) -> None:
     cv = handoff.get("contract_version")
-    if cv != CONTRACT_VERSION:
+    if cv not in SUPPORTED_CONTRACT_VERSIONS:
         result.add(Finding(BLOCKING, "E001_CONTRACT_VERSION", "contract_version",
-                           f"expected {CONTRACT_VERSION}, got {cv!r}"))
+                           f"expected one of {sorted(SUPPORTED_CONTRACT_VERSIONS)}, got {cv!r}"))
 
     direction = handoff.get("direction")
     if direction != EXPECTED_DIRECTION:
@@ -372,7 +373,7 @@ def append_qa_card(result: ImportResult, stored_path: Path, source: Path) -> Non
 # ---------------------- top-level driver ----------------------
 
 def process(handoff_path: Path) -> ImportResult:
-    text = handoff_path.read_text(encoding="utf-8")
+    text = handoff_path.read_text(encoding="utf-8-sig")
     handoff = json.loads(text)
 
     result = ImportResult(
@@ -412,7 +413,7 @@ def main() -> int:
         return 2
 
     # Read handoff one more time for storage (re-parse keeps us defensive).
-    handoff = json.loads(src.read_text(encoding="utf-8"))
+    handoff = json.loads(src.read_text(encoding="utf-8-sig"))
 
     if not args.dry_run and result.qa_status != "QA_REJECT_RETURN_TO_COMMERCE":
         dest = store_handoff(handoff, src)

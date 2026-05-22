@@ -22,7 +22,7 @@ REPORTS = ROOT / "reports"
 DB_PATH = RUNTIME / "commerce_growth.sqlite3"
 LATEST_JSON = PIPELINE_RUNTIME / "latest.json"
 LATEST_REPORT = REPORTS / "latest_growth_pipeline.md"
-HANDOFF_CONTRACT_VERSION = "2026-05-22.v2"
+HANDOFF_CONTRACT_VERSION = "2026-05-22.v2.1"
 
 
 @dataclass

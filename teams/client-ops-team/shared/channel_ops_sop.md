@@ -182,7 +182,7 @@ P3 (자동 응답, 사후 샘플 검수)
 
 ## 4. Commerce → Client Ops Channel Submission 검수 규칙
 
-본 절은 `shared/handoff_contracts/commerce_client_ops_contract.md` (2026-05-22.v2)의 `Commerce → Client Ops` 섹션을 보완한다. canonical 계약은 신호의 구조를 정의하고, 본 SOP는 채널 패키지 검수 운영 절차를 정의한다.
+본 절은 `shared/handoff_contracts/commerce_client_ops_contract.md` (2026-05-22.v2.1)의 `Commerce → Client Ops` 섹션을 보완한다. canonical 계약은 신호의 구조를 정의하고, 본 SOP는 채널 패키지 검수 운영 절차를 정의한다.
 
 ### 4.1 수신 패키지 식별
 
@@ -220,7 +220,7 @@ C. 통과 → Adam 에스컬레이션 카드 발행 (`QA-ADAM-ESCALATION`)
 
 각 거절은 commerce 팀의 해당 `run_id`와 함께 1줄 회신.
 
-## 5. 4가지 채널 운영 신호 (handoff_contract v2)
+## 5. 4가지 채널 운영 신호 (handoff_contract v2.1)
 
 본 SOP는 `commerce_integration.md`에 추가될 다음 4가지 신호의 운영 절차를 정의한다.
 
@@ -278,5 +278,5 @@ C. 통과 → Adam 에스컬레이션 카드 발행 (`QA-ADAM-ESCALATION`)
 - `shared/commerce_integration.md` — 4가지 신규 신호의 정식 정의
 - `shared/handoff_contract.md` — 5명 ↔ 5명 매트릭스
 - `shared/pre_launch_checklist.md §13` — 본 SOP 자동 점검 매핑
-- `shared/handoff_contracts/commerce_client_ops_contract.md` (root, read-only) — 2026-05-22.v2 canonical
+- `shared/handoff_contracts/commerce_client_ops_contract.md` (root, read-only) — 2026-05-22.v2.1 canonical
 - `teams/commerce-agent-team/scripts/commerce_growth_pipeline.py` (read-only) — six-stage 발생원

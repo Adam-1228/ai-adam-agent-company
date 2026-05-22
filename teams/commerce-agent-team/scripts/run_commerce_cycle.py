@@ -38,7 +38,10 @@ def main() -> int:
     rc = run_command([python, "scripts/validate_channel_submissions.py"])
     if rc != 0:
         return rc
-    return run_command([python, "scripts/validate_commerce_handoffs.py"])
+    rc = run_command([python, "scripts/validate_commerce_handoffs.py"])
+    if rc != 0:
+        return rc
+    return run_command([python, "../client-ops-team/scripts/watch_commerce_handoffs.py", "--once"])
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 # Commerce <> Client Ops Handoff Contract
 
-Contract version: `2026-05-22.v2`
+Contract version: `2026-05-22.v2.1`
 
 This is the canonical shared contract for handoffs between:
 
@@ -15,7 +15,7 @@ Every handoff MUST use this envelope.
 
 ```json
 {
-  "contract_version": "2026-05-22.v2",
+  "contract_version": "2026-05-22.v2.1",
   "handoff_id": "COPS-COM-2026-W21-001",
   "direction": "client_ops_to_commerce",
   "from_team": "client-ops-team",
@@ -308,6 +308,7 @@ post_publish_monitoring_request
   ],
   "validation_status": "draft_validated_locally",
   "approval_status": "adam_approval_required",
+  "submit_status": "not_submitted",
   "risk_review": {
     "blocked": false,
     "risk_level": "review_required",
@@ -315,11 +316,21 @@ post_publish_monitoring_request
   },
   "forbidden_claims_present": false,
   "supplier_evidence_present": true,
-  "category_match_seller_scope": true
+  "category_match_seller_scope": true,
+  "seller_scope_status": "category_match"
 }
 ```
 
 `channel_submission_ready` is a QA handoff only. The generated channel packages must remain `not_submitted` until Adam explicitly approves go-live.
+
+`seller_scope_status` lifecycle:
+
+| Status | Meaning | Client Ops Importer Behavior |
+| --- | --- | --- |
+| `not_connected_yet` | Seller account/API is not connected yet. Category scope cannot be checked. | INFO. Hold only if other required evidence is missing. |
+| `connected` | Seller account exists, but category matching has not been evaluated. | WARN until category match is checked. |
+| `category_match` | Connected seller scope supports the candidate category. | PASS if other gates pass. |
+| `category_mismatch` | Connected seller scope does not support the candidate category. | WARN or HOLD; do not go live until resolved. |
 
 #### `post_publish_monitoring_request`
 
@@ -355,7 +366,7 @@ Reject or return `rejected_for_info` when:
 - `review.decision` is not `PASS`
 - customer-facing action is requested without `requires_human_approval=true`
 - any live channel publish is requested before Adam approval
-- `channel_submission_ready` has `dry_run_only=false`, `approval_status` other than `adam_approval_required`, or package `submit_status` other than `not_submitted`
+- `channel_submission_ready` has `dry_run_only=false`, `payload.approval_status` other than `adam_approval_required`, or `payload.submit_status` other than `not_submitted`
 - `tool_change_alert` lacks source or verification status
 - `seller_account_blocker` includes actual secret values instead of only field names in `do_not_disclose`
 

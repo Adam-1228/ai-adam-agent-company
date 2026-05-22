@@ -18,7 +18,8 @@ REPORTS = ROOT / "reports"
 LATEST_JSON = VALIDATION_DIR / "latest_validation.json"
 LATEST_REPORT = REPORTS / "latest_commerce_handoff_validation.md"
 
-CONTRACT_VERSION = "2026-05-22.v2"
+CURRENT_CONTRACT_VERSION = "2026-05-22.v2.1"
+SUPPORTED_CONTRACT_VERSIONS = {"2026-05-22.v2", CURRENT_CONTRACT_VERSION}
 ALLOWED_SIGNAL_TYPES = {"channel_submission_ready"}
 SECRET_KEYWORDS = ("api_key", "access_key", "secret", "token", "password", "refresh_token", "client_secret")
 
@@ -210,8 +211,8 @@ def validate_handoff(path: Path) -> list[Finding]:
         if field not in handoff:
             add(findings, handoff_id, signal_type, "BLOCKING", f"missing top-level field: {field}")
 
-    if handoff.get("contract_version") != CONTRACT_VERSION:
-        add(findings, handoff_id, signal_type, "BLOCKING", f"contract_version must be {CONTRACT_VERSION}")
+    if handoff.get("contract_version") not in SUPPORTED_CONTRACT_VERSIONS:
+        add(findings, handoff_id, signal_type, "BLOCKING", f"contract_version must be one of {sorted(SUPPORTED_CONTRACT_VERSIONS)}")
     if handoff.get("direction") != "commerce_to_client_ops":
         add(findings, handoff_id, signal_type, "BLOCKING", "direction must be commerce_to_client_ops")
     if handoff.get("from_team") != "commerce-agent-team" or handoff.get("to_team") != "client-ops-team":

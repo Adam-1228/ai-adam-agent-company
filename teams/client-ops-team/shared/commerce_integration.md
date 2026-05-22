@@ -85,9 +85,9 @@ Commerce must not ask Client Ops to:
 
 ---
 
-## 채널 운영 신호 (v2 canonical)
+## 채널 운영 신호 (v2.1 canonical)
 
-canonical 계약 `shared/handoff_contracts/commerce_client_ops_contract.md`는 `2026-05-22.v2`로 승격되었고, 다음 4가지 채널 운영 신호를 포함한다. 본 문서는 client-ops 팀의 운영 해석과 SOP 연결을 보완한다.
+canonical 계약 `shared/handoff_contracts/commerce_client_ops_contract.md`는 `2026-05-22.v2.1`로 승격되었고, 다음 4가지 채널 운영 신호를 포함한다. 본 문서는 client-ops 팀의 운영 해석과 SOP 연결을 보완한다.
 
 운영 절차 상세: `shared/channel_ops_sop.md`. 가입 준비 상세: `shared/seller_account_readiness.md`.
 
@@ -106,7 +106,7 @@ canonical 계약 `shared/handoff_contracts/commerce_client_ops_contract.md`는 `
 
 ```json
 {
-  "contract_version": "2026-05-22.v2",
+  "contract_version": "2026-05-22.v2.1",
   "handoff_id": "COM-COPS-2026-W21-channel-001",
   "direction": "commerce_to_client_ops",
   "signal_type": "channel_submission_ready",
@@ -122,10 +122,12 @@ canonical 계약 `shared/handoff_contracts/commerce_client_ops_contract.md`는 `
     ],
     "validation_status": "draft_validated_locally",
     "approval_status": "adam_approval_required",
+    "submit_status": "not_submitted",
     "risk_review": {"blocked": false, "notes": "no hard stop"},
     "forbidden_claims_present": false,
     "supplier_evidence_present": true,
-    "category_match_seller_scope": true
+    "category_match_seller_scope": true,
+    "seller_scope_status": "category_match"
   }
 }
 ```
@@ -147,7 +149,7 @@ canonical 계약 `shared/handoff_contracts/commerce_client_ops_contract.md`는 `
 
 ```json
 {
-  "contract_version": "2026-05-22.v2",
+  "contract_version": "2026-05-22.v2.1",
   "handoff_id": "COPS-COM-2026-W21-blocker-001",
   "direction": "client_ops_to_commerce",
   "signal_type": "seller_account_blocker",
@@ -182,7 +184,7 @@ canonical 계약 `shared/handoff_contracts/commerce_client_ops_contract.md`는 `
 
 ```json
 {
-  "contract_version": "2026-05-22.v2",
+  "contract_version": "2026-05-22.v2.1",
   "handoff_id": "COM-COPS-2026-W21-monitor-001",
   "direction": "commerce_to_client_ops",
   "signal_type": "post_publish_monitoring_request",
@@ -218,7 +220,7 @@ canonical 계약 `shared/handoff_contracts/commerce_client_ops_contract.md`는 `
 
 ```json
 {
-  "contract_version": "2026-05-22.v2",
+  "contract_version": "2026-05-22.v2.1",
   "handoff_id": "COPS-COM-2026-W21-claim-001",
   "direction": "client_ops_to_commerce",
   "signal_type": "refund_or_claim_escalation",
@@ -251,5 +253,5 @@ canonical 계약 `shared/handoff_contracts/commerce_client_ops_contract.md`는 `
 | 4가지 신호가 본 파일에 정의됨 | AUTO | `python scripts/preflight_check.py --section 13` |
 | `channel_ops_sop.md`와 정합 | AUTO | 동일 명령 |
 | `seller_account_readiness.md` 존재 | AUTO | 동일 명령 |
-| v2 canonical 승격 | AUTO | `shared/handoff_contracts/commerce_client_ops_contract.md` version `2026-05-22.v2` 확인 |
+| v2.1 canonical 승격 | AUTO | `shared/handoff_contracts/commerce_client_ops_contract.md` version `2026-05-22.v2.1` 확인 |
 | 실 API 키 grep | AUTO | `python scripts/preflight_check.py --section 1` (기존 §1.3) |
