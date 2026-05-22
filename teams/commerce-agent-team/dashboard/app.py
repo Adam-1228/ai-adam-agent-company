@@ -622,6 +622,26 @@ def channel_readiness_summary() -> dict:
     )
 
 
+def readiness_env_counts(readiness: dict) -> tuple[int, int]:
+    checks = readiness.get("checks", [])
+    env_checks = [
+        check for check in checks
+        if str(check.get("name", "")).startswith("env.")
+    ]
+    present = sum(1 for check in env_checks if check.get("ok") is True)
+    return present, len(env_checks)
+
+
+def channel_env_counts(result: dict) -> tuple[int, int]:
+    checks = result.get("checks", [])
+    env_checks = [
+        check for check in checks
+        if str(check.get("name", "")).startswith("env.")
+    ]
+    present = sum(1 for check in env_checks if check.get("ok") is True)
+    return present, len(env_checks)
+
+
 def channel_validation_summary() -> dict:
     return read_json_file(
         CHANNEL_VALIDATION_SUMMARY,
@@ -656,6 +676,7 @@ def commerce_handoff_validation_summary() -> dict:
 def render_channel_summary_cards() -> str:
     readiness = channel_readiness_summary()
     validation = channel_validation_summary()
+    env_present, env_total = readiness_env_counts(readiness)
     readiness_tone = "good" if readiness.get("status") == "ready" else ("danger" if readiness.get("status") == "unsafe_config" else "warn")
     validation_tone = "good" if validation.get("status") == "valid" else ("danger" if validation.get("status") == "invalid" else "warn")
     return f"""
@@ -663,7 +684,7 @@ def render_channel_summary_cards() -> str:
         <a class="decision-card" href="/channel-ops">
           <h2>판매자 계정 준비</h2>
           <div class="metric decision-status">{html.escape(str(readiness.get("status", "not_started")))}</div>
-          <p class="muted">설정: {html.escape(str(readiness.get("config_source", "none")))} / 미완료 {html.escape(str(readiness.get("blocking_count", 0)))}</p>
+          <p class="muted">설정: {html.escape(str(readiness.get("config_source", "none")))} / 미완료 {html.escape(str(readiness.get("blocking_count", 0)))} / API env {env_present}/{env_total}</p>
         </a>
         <a class="decision-card" href="/channel-ops">
           <h2>채널 Dry-run</h2>
@@ -673,7 +694,7 @@ def render_channel_summary_cards() -> str:
         <a class="decision-card" href="/channel-ops">
           <h2>라이브 게시</h2>
           <div class="metric decision-status">잠금</div>
-          <p class="muted">Adam 승인과 API 키 연결 전에는 실제 게시하지 않습니다.</p>
+          <p class="muted">API 값은 표시하지 않으며 Adam 승인 전에는 실제 게시하지 않습니다.</p>
         </a>
       </section>
     """
@@ -2456,13 +2477,18 @@ def render_growth_pipeline() -> str:
 def render_channel_ops() -> str:
     readiness = channel_readiness_summary()
     validation = channel_validation_summary()
+    env_present, env_total = readiness_env_counts(readiness)
     readiness_report = read_text(CHANNEL_READINESS_REPORT, "아직 판매자 계정 준비 점검 보고서가 없습니다.")
     validation_report = read_text(CHANNEL_VALIDATION_REPORT, "아직 채널 제출 dry-run 검증 보고서가 없습니다.")
     channels = readiness.get("channels", {})
     channel_rows = []
     for channel, result in channels.items():
         ready = "READY" if result.get("ready") else "NOT READY"
-        channel_rows.append(f'<div class="kv"><span>{html.escape(str(channel))}</span><strong>{html.escape(ready)}</strong></div>')
+        channel_present, channel_total = channel_env_counts(result)
+        channel_rows.append(
+            f'<div class="kv"><span>{html.escape(str(channel))}</span>'
+            f'<strong>{html.escape(ready)} · API env {channel_present}/{channel_total}</strong></div>'
+        )
     if not channel_rows:
         channel_rows.append('<p class="muted">아직 채널 준비 점검 기록이 없습니다.</p>')
 
@@ -2502,6 +2528,11 @@ def render_channel_ops() -> str:
           <h2>검증 패키지</h2>
           <div class="metric">{html.escape(str(validation.get("submission_count", 0)))}</div>
           <p class="muted">외부 API 호출 없이 로컬 구조만 검사합니다.</p>
+        </section>
+        <section class="decision-card">
+          <h2>API env</h2>
+          <div class="metric">{env_present}/{env_total}</div>
+          <p class="muted">존재 여부만 표시하며 값은 읽어도 화면에 노출하지 않습니다.</p>
         </section>
       </section>
       <section class="panels">

@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = ROOT / "config"
 EXAMPLE_CONFIG = CONFIG_DIR / "channel_accounts.example.json"
 LOCAL_CONFIG = CONFIG_DIR / "channel_accounts.local.json"
+ENV_PATH = ROOT / ".env"
 RUNTIME_DIR = ROOT / "runtime" / "channel_readiness"
 REPORTS_DIR = ROOT / "reports"
 LATEST_JSON = RUNTIME_DIR / "latest.json"
@@ -88,6 +89,17 @@ def read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def load_env_file(path: Path = ENV_PATH) -> None:
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
 def load_config() -> tuple[dict, str]:
     if LOCAL_CONFIG.exists():
         return read_json(LOCAL_CONFIG), "local"
@@ -138,9 +150,26 @@ def env_checks(channel: str) -> list[Check]:
     return checks
 
 
+def example_env_contract_checks() -> list[Check]:
+    example = read_json(EXAMPLE_CONFIG)
+    checks = []
+    for channel, required in ENV_REQUIRED.items():
+        channel_payload = example.get("channels", {}).get(channel, {})
+        listed = channel_payload.get("env_required")
+        checks.append(
+            Check(
+                f"contract.{channel}.env_required",
+                listed == required,
+                "matches canonical ENV_REQUIRED" if listed == required else "must match check_channel_readiness.py ENV_REQUIRED",
+            )
+        )
+    return checks
+
+
 def evaluate() -> dict:
     config, source = load_config()
     checks: list[Check] = []
+    checks.extend(example_env_contract_checks())
     checks.extend(secret_shape_checks(config))
     checks.extend(boolean_checks("global", config.get("global", {}), GLOBAL_REQUIRED))
 
@@ -209,6 +238,7 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="Print JSON summary.")
     args = parser.parse_args()
 
+    load_env_file()
     summary = evaluate()
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)

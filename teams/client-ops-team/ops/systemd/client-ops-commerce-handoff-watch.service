@@ -8,4 +8,5 @@ Type=oneshot
 User=ubuntu
 WorkingDirectory=/opt/ai-adam-agent-company/teams/client-ops-team
 EnvironmentFile=-/opt/ai-adam-agent-company/teams/client-ops-team/.env
+EnvironmentFile=-/opt/ai-adam-agent-company/teams/commerce-agent-team/.env
 ExecStart=/opt/ai-adam-agent-company/teams/commerce-agent-team/.venv/bin/python scripts/watch_commerce_handoffs.py --once

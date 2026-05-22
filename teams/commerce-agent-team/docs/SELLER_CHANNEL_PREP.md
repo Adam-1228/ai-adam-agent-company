@@ -25,7 +25,13 @@ Then change only boolean readiness flags and non-sensitive notes. Do not add API
 
 ## Environment Variables Later
 
-Credentials should be stored only in `.env` or system environment variables.
+Credentials should be stored only in `.env` or system environment variables. On EC2, the canonical location is:
+
+```text
+/opt/ai-adam-agent-company/teams/commerce-agent-team/.env
+```
+
+Use `teams/commerce-agent-team/.env.example` as the public-safe variable-name template. Do not put real values in GitHub, handoff JSON, dashboard text, reports, or `channel_accounts.local.json`.
 
 Expected Coupang variables:
 

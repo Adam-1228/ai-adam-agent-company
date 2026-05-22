@@ -12,6 +12,11 @@
   },
   "channels": {
     "coupang": {
+      "env_required": [
+        "COUPANG_ACCESS_KEY",
+        "COUPANG_SECRET_KEY",
+        "COUPANG_VENDOR_ID"
+      ],
       "seller_account_created": false,
       "wing_login_verified": false,
       "business_profile_verified": false,
@@ -25,6 +30,16 @@
       "notes": "Coupang Open API credentials must be stored in .env or system environment, never in this JSON file."
     },
     "amazon": {
+      "env_required": [
+        "AMAZON_SP_CLIENT_ID",
+        "AMAZON_SP_CLIENT_SECRET",
+        "AMAZON_SP_REFRESH_TOKEN",
+        "AMAZON_SP_AWS_ACCESS_KEY_ID",
+        "AMAZON_SP_AWS_SECRET_ACCESS_KEY",
+        "AMAZON_SP_ROLE_ARN",
+        "AMAZON_SELLER_ID",
+        "AMAZON_MARKETPLACE_ID"
+      ],
       "seller_account_created": false,
       "seller_central_login_verified": false,
       "business_profile_verified": false,
