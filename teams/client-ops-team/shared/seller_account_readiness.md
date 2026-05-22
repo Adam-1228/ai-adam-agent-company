@@ -109,12 +109,14 @@
 | 가입 후 점검 | 카테고리 신청서 (보석/식품 등 회색지대는 추가 서류) | MANUAL |
 | 카탈로그 시험 | `mode=draft_only_requires_adam_approval` 으로 시뮬레이션 1회 | AUTO (`commerce-agent-team`이 stage 5에서 처리) |
 
-본 저장소에 절대 커밋 금지:
+본 저장소에 절대 커밋 금지 (변수명만 `.env.example`에, 실값은 EC2 `/opt/ai-adam-agent-company/teams/commerce-agent-team/.env`에만):
 
 - `COUPANG_VENDOR_ID` 실값
 - `COUPANG_ACCESS_KEY`, `COUPANG_SECRET_KEY`
 - WING 로그인 비밀번호
 - 통신판매업 신고증 PDF
+
+변수명 집합은 `teams/commerce-agent-team/scripts/check_channel_readiness.py`의 `ENV_REQUIRED["coupang"]`과 정확히 1:1로 유지한다.
 
 ### 2.2 Amazon (Seller Central)
 
@@ -128,12 +130,16 @@
 | 가입 후 점검 | Brand Registry (자체 브랜드 보호 시) | MANUAL |
 | 카탈로그 시험 | `mode=validation_preview_only_requires_adam_approval` | AUTO (`commerce-agent-team` stage 5) |
 
-본 저장소에 절대 커밋 금지:
+본 저장소에 절대 커밋 금지 (변수명만 `.env.example`에, 실값은 EC2 `/opt/ai-adam-agent-company/teams/commerce-agent-team/.env`에만):
 
 - `AMAZON_SELLER_ID`, `AMAZON_MARKETPLACE_ID` 실값
-- `AMAZON_SP_API_REFRESH_TOKEN`
-- `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (SP-API용)
+- `AMAZON_SP_CLIENT_ID`, `AMAZON_SP_CLIENT_SECRET`
+- `AMAZON_SP_REFRESH_TOKEN`
+- `AMAZON_SP_AWS_ACCESS_KEY_ID`, `AMAZON_SP_AWS_SECRET_ACCESS_KEY`
+- `AMAZON_SP_ROLE_ARN`
 - W-8BEN 양식, DUNS 인증서
+
+변수명 집합은 `teams/commerce-agent-team/scripts/check_channel_readiness.py`의 `ENV_REQUIRED["amazon"]`과 정확히 1:1로 유지한다. 추가/변경 시 양 팀 동시 갱신 (canonical 변경 PR + client-ops 본 문서 + `.env.example` + `preflight_check.py` CHANNEL_KEY_VARS).
 
 ## 3. API 키 발급 전후 체크리스트
 
@@ -147,11 +153,13 @@
 
 ### 3.2 발급 직후 (운영자 책임)
 
-- [ ] 키를 EC2의 `teams/commerce-agent-team/.env`에 저장 (저장소 외부)
+- [ ] 키를 EC2의 **`/opt/ai-adam-agent-company/teams/commerce-agent-team/.env`** 한 곳에만 저장 (이 파일이 commerce-agent-team과 client-ops-team이 공유하는 단일 source of truth — `llm_client.py`가 양 팀에서 이 경로를 fallback으로 읽음)
+- [ ] 변수명은 `teams/commerce-agent-team/scripts/check_channel_readiness.py`의 `ENV_REQUIRED`와 1:1 일치 (Coupang 3개 + Amazon 8개 = 11개)
 - [ ] 권한 최소화: SP-API role은 Inventory/Listings READ + Catalog WRITE만, 그 외 거절
 - [ ] Coupang 셀러 권한도 동일하게 최소 범위
 - [ ] 키 로테이션 정책 등재 (90일)
 - [ ] 모든 발급 키의 `last_rotated_at` 메타를 별도 secure log에 기록 (저장소 X)
+- [ ] `python teams/commerce-agent-team/scripts/check_channel_readiness.py`가 `status=ready` 또는 `not_ready` 이외 값을 반환하지 않는다 (`unsafe_config` 발생 시 즉시 키 로테이션)
 
 ### 3.3 발급 후 첫 1주
 
@@ -179,8 +187,10 @@
 
 ### 4.3 API 키 / 토큰
 
-- 모든 `*_API_KEY`, `*_SECRET_KEY`, `*_REFRESH_TOKEN`, `*_ACCESS_TOKEN`
-- AWS IAM access/secret pair (SP-API용)
+- 모든 `*_API_KEY`, `*_SECRET_KEY`, `*_REFRESH_TOKEN`, `*_ACCESS_TOKEN`, `*_ROLE_ARN`
+- Amazon SP-API: `AMAZON_SP_CLIENT_ID` / `AMAZON_SP_CLIENT_SECRET` / `AMAZON_SP_REFRESH_TOKEN` / `AMAZON_SP_AWS_ACCESS_KEY_ID` / `AMAZON_SP_AWS_SECRET_ACCESS_KEY` / `AMAZON_SP_ROLE_ARN`
+- Coupang: `COUPANG_VENDOR_ID` / `COUPANG_ACCESS_KEY` / `COUPANG_SECRET_KEY`
+- 위 변수명은 `teams/commerce-agent-team/scripts/check_channel_readiness.py`의 `ENV_REQUIRED`가 canonical. 실값은 EC2 `/opt/ai-adam-agent-company/teams/commerce-agent-team/.env` 한 곳에만.
 - WING/Seller Central 로그인 비밀번호
 - MFA seed/QR
 

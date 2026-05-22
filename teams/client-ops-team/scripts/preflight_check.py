@@ -568,22 +568,30 @@ SENSITIVE_PATTERNS_13: list[tuple[str, re.Pattern[str]]] = [
     # Avoids false-positives on date-suffixed IDs like "msg-2026-05-21-00231".
     ("CARD_NUMBER", re.compile(r"\b(?:\d{13,19}|\d{4}[ -]\d{4}[ -]\d{4}[ -]\d{3,4})\b")),
     ("US_DUNS", re.compile(r"\bDUNS[: ]\d{9}\b", re.IGNORECASE)),
-    ("AWS_ACCESS_KEY", re.compile(r"AKIA[0-9A-Z]{16}")),
-    ("AMAZON_REFRESH_TOKEN", re.compile(r"Atzr\|[A-Za-z0-9_\-]{20,}")),
-    ("COUPANG_VENDOR_ID", re.compile(r"\bA\d{8,12}\b")),
+    ("AWS_ACCESS_KEY_SHAPE", re.compile(r"AKIA[0-9A-Z]{16}")),
+    ("AMAZON_SP_REFRESH_TOKEN", re.compile(r"Atzr\|[A-Za-z0-9_\-]{20,}")),
+    ("COUPANG_VENDOR_ID_SHAPE", re.compile(r"\bA\d{8,12}\b")),
 ]
 
 # Channel API key env-var NAMES we expect (existence check only — values are
 # never read or printed by this script).
+# This list must stay 1:1 with teams/commerce-agent-team/scripts/check_channel_readiness.py
+# ENV_REQUIRED. Real values live only in
+# /opt/ai-adam-agent-company/teams/commerce-agent-team/.env on EC2.
 CHANNEL_KEY_VARS = [
+    # Coupang (3)
     "COUPANG_VENDOR_ID",
     "COUPANG_ACCESS_KEY",
     "COUPANG_SECRET_KEY",
+    # Amazon SP-API (8)
+    "AMAZON_SP_CLIENT_ID",
+    "AMAZON_SP_CLIENT_SECRET",
+    "AMAZON_SP_REFRESH_TOKEN",
+    "AMAZON_SP_AWS_ACCESS_KEY_ID",
+    "AMAZON_SP_AWS_SECRET_ACCESS_KEY",
+    "AMAZON_SP_ROLE_ARN",
     "AMAZON_SELLER_ID",
     "AMAZON_MARKETPLACE_ID",
-    "AMAZON_SP_API_REFRESH_TOKEN",
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
 ]
 
 
