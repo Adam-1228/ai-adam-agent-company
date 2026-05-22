@@ -38,6 +38,8 @@ CHANNEL_READINESS_SUMMARY = RUNTIME / "channel_readiness" / "latest.json"
 CHANNEL_READINESS_REPORT = REPORTS / "latest_channel_readiness.md"
 CHANNEL_VALIDATION_SUMMARY = RUNTIME / "channel_submissions" / "latest_validation.json"
 CHANNEL_VALIDATION_REPORT = REPORTS / "latest_channel_validation.md"
+COMMERCE_HANDOFF_VALIDATION_SUMMARY = RUNTIME / "commerce_handoffs" / "latest_validation.json"
+COMMERCE_HANDOFF_VALIDATION_REPORT = REPORTS / "latest_commerce_handoff_validation.md"
 
 COMMERCE_AGENTS = [
     ("01_market_scout", "시장 탐색가", "상품 기회 발굴", "수요 신호와 카테고리 후보를 찾습니다."),
@@ -588,6 +590,11 @@ def render_growth_summary_cards() -> str:
           <div class="metric">{html.escape(str(counts.get("risk_blocked", 0)))}</div>
           <p class="muted">인증, IP, 이미지 권리, 마진 문제로 자동 차단된 후보입니다.</p>
         </a>
+        <a class="decision-card" href="/growth-pipeline">
+          <h2>Client Ops 검수 요청</h2>
+          <div class="metric">{html.escape(str(counts.get("commerce_to_client_ops_handoffs", 0)))}</div>
+          <p class="muted">채널 게시 전 QA에게 넘긴 dry-run handoff입니다.</p>
+        </a>
       </section>
     """
 
@@ -614,6 +621,21 @@ def channel_validation_summary() -> dict:
             "status": "not_started",
             "growth_run_id": "none",
             "submission_count": 0,
+            "blocking": 0,
+            "warn": 0,
+            "info": 0,
+            "findings": [],
+        },
+    )
+
+
+def commerce_handoff_validation_summary() -> dict:
+    return read_json_file(
+        COMMERCE_HANDOFF_VALIDATION_SUMMARY,
+        {
+            "created_at": "아직 검증 기록이 없습니다.",
+            "status": "not_started",
+            "handoff_count": 0,
             "blocking": 0,
             "warn": 0,
             "info": 0,
@@ -2298,6 +2320,8 @@ def render_growth_pipeline() -> str:
     counts = summary.get("stage_counts", {})
     decisions = load_pipeline_approvals()
     report = read_text(GROWTH_PIPELINE_REPORT, "아직 6단계 파이프라인 보고서가 없습니다.")
+    handoff_validation = commerce_handoff_validation_summary()
+    handoff_report = read_text(COMMERCE_HANDOFF_VALIDATION_REPORT, "아직 commerce handoff 검증 보고서가 없습니다.")
 
     approval_cards = []
     for item in summary.get("approval_required", []):
@@ -2330,6 +2354,38 @@ def render_growth_pipeline() -> str:
     if not approval_cards:
         approval_cards.append('<section class="panel"><h2>Adam 승인 대기</h2><p class="muted">현재 승인 대기 상품이 없습니다.</p></section>')
 
+    handoff_rows = []
+    for item in summary.get("commerce_to_client_ops_handoffs", [])[:10]:
+        channels = item.get("channels", [])
+        if not isinstance(channels, list):
+            channels = [str(channels)]
+        handoff_rows.append(
+            f"""
+            <tr>
+              <td>{html.escape(str(item.get("opportunity_id", "")))}</td>
+              <td>{html.escape(str(item.get("signal_type", "")))}</td>
+              <td>{html.escape(", ".join(str(channel) for channel in channels))}</td>
+              <td>{html.escape(str(item.get("status", "")))}</td>
+            </tr>
+            """
+        )
+    if not handoff_rows:
+        handoff_rows.append('<tr><td colspan="4">발행된 Client Ops handoff가 없습니다.</td></tr>')
+
+    handoff_findings = []
+    for finding in handoff_validation.get("findings", [])[:8]:
+        handoff_findings.append(
+            f"""
+            <tr>
+              <td>{html.escape(str(finding.get("handoff_id", "")))}</td>
+              <td>{html.escape(str(finding.get("severity", "")))}</td>
+              <td>{html.escape(str(finding.get("message", "")))}</td>
+            </tr>
+            """
+        )
+    if not handoff_findings:
+        handoff_findings.append('<tr><td colspan="3">handoff 검증 기록이 없습니다.</td></tr>')
+
     body = f"""
       <section class="office-hero">
         <h2>6단계 커머스 파이프라인</h2>
@@ -2342,6 +2398,7 @@ def render_growth_pipeline() -> str:
         <section class="decision-card"><h2>리스크 차단</h2><div class="metric">{html.escape(str(counts.get("risk_blocked", 0)))}</div><p class="muted">정책/IP/인증 차단</p></section>
         <section class="decision-card"><h2>채널 패키지</h2><div class="metric">{html.escape(str(counts.get("channel_packages", 0)))}</div><p class="muted">게시 전 초안</p></section>
         <section class="decision-card"><h2>Client Ops handoff</h2><div class="metric">{html.escape(str(counts.get("commerce_to_client_ops_handoffs", 0)))}</div><p class="muted">QA 검수 요청</p></section>
+        <section class="decision-card"><h2>Handoff 검증</h2><div class="metric decision-status">{html.escape(str(handoff_validation.get("status", "not_started")))}</div><p class="muted">BLOCK {html.escape(str(handoff_validation.get("blocking", 0)))} / WARN {html.escape(str(handoff_validation.get("warn", 0)))}</p></section>
       </section>
       <section class="panels">
         <section>
@@ -2351,6 +2408,23 @@ def render_growth_pipeline() -> str:
           <h2>파이프라인 보고서</h2>
           <pre>{html.escape(report)}</pre>
         </aside>
+      </section>
+      <section class="panels">
+        <section class="panel">
+          <h2>Client Ops 검수 요청</h2>
+          <table class="data-table">
+            <thead><tr><th>상품</th><th>신호</th><th>채널</th><th>상태</th></tr></thead>
+            <tbody>{''.join(handoff_rows)}</tbody>
+          </table>
+        </section>
+        <section class="panel">
+          <h2>Handoff 자체 검증</h2>
+          <table class="data-table">
+            <thead><tr><th>Handoff</th><th>등급</th><th>내용</th></tr></thead>
+            <tbody>{''.join(handoff_findings)}</tbody>
+          </table>
+          <pre>{html.escape(handoff_report)}</pre>
+        </section>
       </section>
     """
     return html_page("6단계 파이프라인", body)
