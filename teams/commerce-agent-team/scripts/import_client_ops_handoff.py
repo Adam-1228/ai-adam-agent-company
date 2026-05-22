@@ -11,7 +11,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_DIR = ROOT / "runtime" / "client_ops_handoffs"
 TASKS_PATH = RUNTIME_DIR / "commerce_tasks.md"
-CONTRACT_VERSION = "2026-05-21.v1"
+CURRENT_CONTRACT_VERSION = "2026-05-22.v2"
+SUPPORTED_CONTRACT_VERSIONS = {"2026-05-21.v1", CURRENT_CONTRACT_VERSION}
 
 CLIENT_TO_COMMERCE_TYPES = {
     "operational_performance": "02_margin_analyst",
@@ -19,6 +20,21 @@ CLIENT_TO_COMMERCE_TYPES = {
     "demand_signal": "01_market_scout",
     "complaint_patterns": "03_risk_guardian",
     "channel_trends": "01_market_scout",
+    "seller_account_blocker": "05_ops_manager",
+    "refund_or_claim_escalation": "03_risk_guardian",
+}
+
+AGGREGATION_SIGNALS = {
+    "operational_performance",
+    "catalog_usage",
+    "demand_signal",
+    "complaint_patterns",
+    "channel_trends",
+}
+
+V2_OPERATIONAL_SIGNALS = {
+    "seller_account_blocker",
+    "refund_or_claim_escalation",
 }
 
 REQUIRED_TOP_LEVEL = [
@@ -54,7 +70,7 @@ class ValidationError(Exception):
 
 
 def load_json(path: Path) -> dict[str, Any]:
-    with path.open("r", encoding="utf-8") as f:
+    with path.open("r", encoding="utf-8-sig") as f:
         payload = json.load(f)
     if not isinstance(payload, dict):
         raise ValidationError("handoff root must be a JSON object")
@@ -71,19 +87,40 @@ def require_fields(payload: dict[str, Any], fields: list[str], signal_type: str)
         require(field in payload, f"{signal_type} requires payload.{field}")
 
 
+def require_string_list(payload: dict[str, Any], field: str, signal_type: str) -> None:
+    value = payload.get(field)
+    require(isinstance(value, list) and value, f"{signal_type} requires payload.{field} as a non-empty list")
+    require(all(isinstance(item, str) and item.strip() for item in value), f"{signal_type} payload.{field} must contain strings")
+
+
+def require_severity(payload: dict[str, Any], signal_type: str) -> None:
+    severity = payload.get("severity")
+    require(severity in {"low", "medium", "high", "critical"}, f"{signal_type} payload.severity must be low, medium, high, or critical")
+
+
 def validate_handoff(handoff: dict[str, Any]) -> str:
     for field in REQUIRED_TOP_LEVEL:
         require(field in handoff, f"missing top-level field: {field}")
 
-    require(handoff["contract_version"] == CONTRACT_VERSION, f"contract_version must be {CONTRACT_VERSION}")
+    require(
+        handoff["contract_version"] in SUPPORTED_CONTRACT_VERSIONS,
+        f"contract_version must be one of {sorted(SUPPORTED_CONTRACT_VERSIONS)}",
+    )
     require(handoff["direction"] == "client_ops_to_commerce", "direction must be client_ops_to_commerce")
     require(handoff["from_team"] == "client-ops-team", "from_team must be client-ops-team")
     require(handoff["to_team"] == "commerce-agent-team", "to_team must be commerce-agent-team")
     require(isinstance(handoff["requires_human_approval"], bool), "requires_human_approval must be a boolean")
     require(isinstance(handoff["dry_run_only"], bool), "dry_run_only must be a boolean")
+    require(handoff["requires_human_approval"] is True, "requires_human_approval must be true")
+    require(handoff["dry_run_only"] is True, "dry_run_only must be true")
 
     signal_type = handoff["signal_type"]
     require(signal_type in CLIENT_TO_COMMERCE_TYPES, f"unsupported signal_type: {signal_type}")
+    if signal_type in V2_OPERATIONAL_SIGNALS:
+        require(
+            handoff["contract_version"] == CURRENT_CONTRACT_VERSION,
+            f"{signal_type} requires contract_version {CURRENT_CONTRACT_VERSION}",
+        )
 
     review = handoff["review"]
     require(isinstance(review, dict), "review must be an object")
@@ -96,9 +133,10 @@ def validate_handoff(handoff: dict[str, Any]) -> str:
 
     payload = handoff["payload"]
     require(isinstance(payload, dict), "payload must be an object")
-    sample_size = payload.get("sample_size_cases")
-    require(type(sample_size) is int, "payload.sample_size_cases must be an integer")
-    require(sample_size >= 5, "payload.sample_size_cases must be at least 5")
+    if signal_type in AGGREGATION_SIGNALS:
+        sample_size = payload.get("sample_size_cases")
+        require(type(sample_size) is int, "payload.sample_size_cases must be an integer")
+        require(sample_size >= 5, "payload.sample_size_cases must be at least 5")
 
     if signal_type == "operational_performance":
         require_fields(
@@ -164,6 +202,44 @@ def validate_handoff(handoff: dict[str, Any]) -> str:
             ],
             signal_type,
         )
+    elif signal_type == "seller_account_blocker":
+        require_fields(
+            payload,
+            [
+                "channel",
+                "blocker_type",
+                "severity",
+                "discovered_at",
+                "affected_opportunity_ids",
+                "remediation_owner",
+                "do_not_disclose",
+            ],
+            signal_type,
+        )
+        require_severity(payload, signal_type)
+        require_string_list(payload, "affected_opportunity_ids", signal_type)
+        require_string_list(payload, "do_not_disclose", signal_type)
+    elif signal_type == "refund_or_claim_escalation":
+        require_fields(
+            payload,
+            [
+                "opportunity_id",
+                "channel",
+                "trigger_type",
+                "severity",
+                "claim_breakdown",
+                "case_ids_anonymized",
+                "raw_customer_messages_included",
+                "recommended_commerce_action",
+                "qa_decision",
+                "qa_owner",
+            ],
+            signal_type,
+        )
+        require_severity(payload, signal_type)
+        require(isinstance(payload["claim_breakdown"], dict), "payload.claim_breakdown must be an object")
+        require_string_list(payload, "case_ids_anonymized", signal_type)
+        require(payload["raw_customer_messages_included"] is False, "raw customer messages must not be included")
 
     return CLIENT_TO_COMMERCE_TYPES[signal_type]
 

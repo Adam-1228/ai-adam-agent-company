@@ -1,6 +1,6 @@
 # Commerce <> Client Ops Handoff Contract
 
-Contract version: `2026-05-21.v1`
+Contract version: `2026-05-22.v2`
 
 This is the canonical shared contract for handoffs between:
 
@@ -15,7 +15,7 @@ Every handoff MUST use this envelope.
 
 ```json
 {
-  "contract_version": "2026-05-21.v1",
+  "contract_version": "2026-05-22.v2",
   "handoff_id": "COPS-COM-2026-W21-001",
   "direction": "client_ops_to_commerce",
   "from_team": "client-ops-team",
@@ -55,6 +55,8 @@ catalog_usage
 demand_signal
 complaint_patterns
 channel_trends
+seller_account_blocker
+refund_or_claim_escalation
 ```
 
 Commerce does not ingest these directly as product candidates. It first receives them as anonymized signals, then routes them to the right commerce agent.
@@ -66,6 +68,8 @@ Commerce does not ingest these directly as product candidates. It first receives
 | `demand_signal` | `01_market_scout` | Strong | Convert into product/category discovery task. |
 | `complaint_patterns` | `03_risk_guardian`, `04_listing_builder` | Strong | Convert into risk exclusions, FAQ requirements, and copy guardrails. |
 | `channel_trends` | `01_market_scout`, `04_listing_builder` | Partial | Use as channel/context signal. Do not claim causal revenue impact. |
+| `seller_account_blocker` | `05_ops_manager`, `03_risk_guardian` | Strong | Pause affected channel packages until the account, permission, legal, or category blocker is cleared. Never include actual secret/account values. |
+| `refund_or_claim_escalation` | `03_risk_guardian`, `05_ops_manager` | Strong | Treat as a safety signal for SKU pause, listing correction, or permanent exclusion. Include only anonymized case IDs and category counts. |
 
 ### Client Ops -> Commerce Required Payloads
 
@@ -159,6 +163,45 @@ Commerce does not ingest these directly as product candidates. It first receives
 }
 ```
 
+#### `seller_account_blocker`
+
+```json
+{
+  "channel": "coupang",
+  "blocker_type": "permission_insufficient",
+  "severity": "high",
+  "missing_permission": "listing.write",
+  "discovered_at": "2026-05-22T10:30:00+09:00",
+  "affected_opportunity_ids": ["ADAM-OPP-0042"],
+  "remediation_owner": "Adam",
+  "estimated_remediation_hours": 24,
+  "do_not_disclose": ["api_key_value", "vendor_id_value"]
+}
+```
+
+`do_not_disclose` MUST contain field names only, never the actual API key, vendor ID, account number, or credential value.
+
+#### `refund_or_claim_escalation`
+
+```json
+{
+  "opportunity_id": "ADAM-OPP-0042",
+  "channel": "coupang",
+  "trigger_type": "refund_threshold_3_in_7d",
+  "severity": "high",
+  "claim_breakdown": {
+    "size_mismatch": 2,
+    "quality_complaint": 2,
+    "shipping_damage": 1
+  },
+  "case_ids_anonymized": ["CASE-A1", "CASE-A2", "CASE-A3"],
+  "raw_customer_messages_included": false,
+  "recommended_commerce_action": "review_catalog_or_exclude",
+  "qa_decision": "ESCALATE_TO_ADAM",
+  "qa_owner": "05_coordinator_qa"
+}
+```
+
 ## Commerce -> Client Ops
 
 Allowed `signal_type` values:
@@ -169,6 +212,8 @@ market_trend
 tool_change_alert
 rejected_for_info
 collaboration_request
+channel_submission_ready
+post_publish_monitoring_request
 ```
 
 | Signal Type | Client Ops Route | Fit | Processing Rule |
@@ -178,6 +223,8 @@ collaboration_request
 | `tool_change_alert` | `05_coordinator_qa`, `02_ops_operator` | Partial | Commerce is not the authoritative source. Must include evidence URL/source and verification status. |
 | `rejected_for_info` | Original requester, `05_coordinator_qa` | Strong | Use when commerce cannot act due to missing data or risk. |
 | `collaboration_request` | Target agent(s), `05_coordinator_qa` | Strong | Use for scoped cross-team work. |
+| `channel_submission_ready` | `05_coordinator_qa` | Strong | Use when commerce has generated dry-run channel packages after stage 5. Client Ops may QA the package, but must not publish or contact channels. |
+| `post_publish_monitoring_request` | `04_data_analyst`, `02_ops_operator`, `05_coordinator_qa` | Strong | Use only after Adam has approved go-live and the channel is actually live. Starts KPI and incident monitoring. |
 
 ### Commerce -> Client Ops Required Payloads
 
@@ -249,17 +296,68 @@ collaboration_request
 }
 ```
 
+#### `channel_submission_ready`
+
+```json
+{
+  "run_id": "GROWTH-20260522-093000",
+  "opportunity_id": "ADAM-OPP-0042",
+  "package_paths": [
+    "teams/commerce-agent-team/runtime/channel_submissions/pending/GROWTH-20260522-093000_ADAM-OPP-0042_coupang.json",
+    "teams/commerce-agent-team/runtime/channel_submissions/pending/GROWTH-20260522-093000_ADAM-OPP-0042_amazon.json"
+  ],
+  "validation_status": "draft_validated_locally",
+  "approval_status": "adam_approval_required",
+  "risk_review": {
+    "blocked": false,
+    "risk_level": "review_required",
+    "hard_stops": []
+  },
+  "forbidden_claims_present": false,
+  "supplier_evidence_present": true,
+  "category_match_seller_scope": true
+}
+```
+
+`channel_submission_ready` is a QA handoff only. The generated channel packages must remain `not_submitted` until Adam explicitly approves go-live.
+
+#### `post_publish_monitoring_request`
+
+```json
+{
+  "opportunity_id": "ADAM-OPP-0042",
+  "sku": "ADAM-ADAM-OPP-0042",
+  "channels_live": ["coupang"],
+  "live_since": "2026-05-22T14:00:00+09:00",
+  "metrics_to_track": [
+    "views",
+    "clicks",
+    "orders_count",
+    "revenue_indexed",
+    "returns_count",
+    "negative_review_count",
+    "claim_count"
+  ],
+  "baseline_period": "no_baseline_first_week",
+  "report_cadence": "daily_first_7_days_then_weekly",
+  "client_ops_routes": ["04_data_analyst", "02_ops_operator"]
+}
+```
+
 ## Shared Rejection Conditions
 
 Reject or return `rejected_for_info` when:
 
 - any `pii_check` field is false
-- `sample_size_cases` is below 5 for client-derived signals
+- `sample_size_cases` is below 5 for client-derived aggregation signals
 - raw customer messages are included
 - absolute customer revenue, phone numbers, emails, IDs, medical, legal, tax, or payment data are included
 - `review.decision` is not `PASS`
 - customer-facing action is requested without `requires_human_approval=true`
+- any live channel publish is requested before Adam approval
+- `channel_submission_ready` has `dry_run_only=false`, `approval_status` other than `adam_approval_required`, or package `submit_status` other than `not_submitted`
 - `tool_change_alert` lacks source or verification status
+- `seller_account_blocker` includes actual secret values instead of only field names in `do_not_disclose`
 
 ## Current Commerce Receiver
 
@@ -269,7 +367,7 @@ Commerce currently supports safe file-based receiving through:
 python teams/commerce-agent-team/scripts/import_client_ops_handoff.py path/to/handoff.json --dry-run
 ```
 
-Accepted handoffs are written under ignored runtime storage:
+The receiver accepts v1 aggregation signals and v2 operational signals. Accepted handoffs are written under ignored runtime storage:
 
 ```text
 teams/commerce-agent-team/runtime/client_ops_handoffs/

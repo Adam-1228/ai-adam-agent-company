@@ -17,10 +17,12 @@ ROSTER_PATH = REPO_ROOT / "shared" / "organization" / "agent_roster.json"
 RUNTIME = ROOT / "runtime"
 PIPELINE_RUNTIME = RUNTIME / "growth_pipeline"
 CHANNEL_PENDING = RUNTIME / "channel_submissions" / "pending"
+COMMERCE_TO_CLIENT_OPS = RUNTIME / "commerce_to_client_ops_handoffs"
 REPORTS = ROOT / "reports"
 DB_PATH = RUNTIME / "commerce_growth.sqlite3"
 LATEST_JSON = PIPELINE_RUNTIME / "latest.json"
 LATEST_REPORT = REPORTS / "latest_growth_pipeline.md"
+HANDOFF_CONTRACT_VERSION = "2026-05-22.v2"
 
 
 @dataclass
@@ -49,6 +51,18 @@ class Candidate:
 
 def now() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def iso_week() -> str:
+    year, week, _ = datetime.now().isocalendar()
+    return f"{year}-W{week:02d}"
+
+
+def repo_relative(path: Path) -> str:
+    try:
+        return path.resolve().relative_to(REPO_ROOT.resolve()).as_posix()
+    except ValueError:
+        return path.as_posix()
 
 
 def to_int(value: str) -> int:
@@ -492,6 +506,86 @@ def stage_5_channel_packages(con: sqlite3.Connection, run_id: str, rows: list[di
     return rows
 
 
+def emit_channel_submission_handoffs(run_id: str, rows: list[dict]) -> list[dict]:
+    COMMERCE_TO_CLIENT_OPS.mkdir(parents=True, exist_ok=True)
+    emitted = []
+    for row in rows:
+        if row["risk"]["blocked"]:
+            continue
+        submissions = [
+            submission
+            for submission in row["submissions"]
+            if submission["approval_status"] == "adam_approval_required"
+        ]
+        if not submissions:
+            continue
+
+        c: Candidate = row["candidate"]
+        channels = [submission["channel"] for submission in submissions]
+        package_paths = [repo_relative(Path(submission["payload_path"])) for submission in submissions]
+        handoff_id = f"COM-COPS-{run_id}-{c.id}-channel-ready"
+        handoff_path = COMMERCE_TO_CLIENT_OPS / f"{handoff_id}.json"
+        supplier_evidence_present = row["supplier"]["supplier_status"] == "supplier_candidate"
+        handoff = {
+            "contract_version": HANDOFF_CONTRACT_VERSION,
+            "handoff_id": handoff_id,
+            "direction": "commerce_to_client_ops",
+            "from_team": "commerce-agent-team",
+            "to_team": "client-ops-team",
+            "created_at": now(),
+            "week": iso_week(),
+            "source_agent": "05_ops_manager",
+            "signal_type": "channel_submission_ready",
+            "summary": f"{c.product_name} channel draft package is ready for QA and Adam approval.",
+            "confidence": "medium",
+            "requires_human_approval": True,
+            "dry_run_only": True,
+            "pii_check": {
+                "names_removed": True,
+                "contacts_removed": True,
+                "business_ids_removed": True,
+                "raw_messages_removed": True,
+                "amounts_indexed": True,
+                "medical_legal_tax_only_as_category": True,
+            },
+            "review": {
+                "owner": "05_ops_manager",
+                "decision": "PASS",
+                "decision_reason": "Dry-run package only. No channel publish is allowed before Adam approval.",
+            },
+            "payload": {
+                "run_id": run_id,
+                "opportunity_id": c.id,
+                "package_paths": package_paths,
+                "channels": channels,
+                "validation_status": "draft_validated_locally",
+                "approval_status": "adam_approval_required",
+                "submit_status": "not_submitted",
+                "risk_review": row["risk"],
+                "forbidden_claims_present": False,
+                "supplier_evidence_present": supplier_evidence_present,
+                "category_match_seller_scope": False,
+                "seller_scope_status": "not_connected_yet",
+                "qa_route": ["05_coordinator_qa"],
+                "do_not_disclose": ["api_key_value", "vendor_id_value", "seller_account_value"],
+            },
+        }
+        handoff_path.write_text(json.dumps(handoff, ensure_ascii=False, indent=2), encoding="utf-8")
+        emitted.append(
+            {
+                "handoff_id": handoff_id,
+                "signal_type": "channel_submission_ready",
+                "opportunity_id": c.id,
+                "product_name": c.product_name,
+                "channels": channels,
+                "path": repo_relative(handoff_path),
+                "to_agent": "client_ops:05_coordinator_qa",
+                "status": "emitted",
+            }
+        )
+    return emitted
+
+
 def stage_6_performance_tracking(con: sqlite3.Connection, run_id: str, rows: list[dict]) -> list[dict]:
     for row in rows:
         c: Candidate = row["candidate"]
@@ -558,7 +652,7 @@ def create_approval_queue(con: sqlite3.Connection, run_id: str, rows: list[dict]
     return approvals
 
 
-def summarize(run_id: str, rows: list[dict], approvals: list[dict]) -> dict:
+def summarize(run_id: str, rows: list[dict], approvals: list[dict], channel_handoffs: list[dict]) -> dict:
     blocked = [row for row in rows if row["risk"]["blocked"]]
     pending = [row for row in rows if not row["risk"]["blocked"]]
     supplier_needed = [row for row in pending if row["supplier"]["supplier_status"] != "supplier_candidate"]
@@ -569,6 +663,7 @@ def summarize(run_id: str, rows: list[dict], approvals: list[dict]) -> dict:
         "listing_drafts": len(rows),
         "channel_packages": sum(len(row["submissions"]) for row in rows),
         "approval_required": len(approvals),
+        "commerce_to_client_ops_handoffs": len(channel_handoffs),
         "performance_trackers": len(rows),
         "supplier_evidence_needed": len(supplier_needed),
     }
@@ -578,6 +673,7 @@ def summarize(run_id: str, rows: list[dict], approvals: list[dict]) -> dict:
         "status": "approval_required" if approvals else "blocked_or_empty",
         "stage_counts": stage_counts,
         "approval_required": approvals,
+        "commerce_to_client_ops_handoffs": channel_handoffs,
         "blocked": [
             {
                 "opportunity_id": row["candidate"].id,
@@ -618,7 +714,7 @@ def render_report(summary: dict, roster: dict[str, dict]) -> str:
         f"2. 공급처/마진 검증: {counts['supplier_checked']}건, 공급처 증빙 필요 {counts['supplier_evidence_needed']}건",
         f"3. 리스크 차단: 차단 {counts['risk_blocked']}건",
         f"4. 판매 페이지 제작: 초안 {counts['listing_drafts']}건",
-        f"5. 채널 제출 준비: 패키지 {counts['channel_packages']}개, Adam 승인 대기 {counts['approval_required']}건",
+        f"5. 채널 제출 준비: 패키지 {counts['channel_packages']}개, Adam 승인 대기 {counts['approval_required']}건, client-ops handoff {counts['commerce_to_client_ops_handoffs']}건",
         f"6. 성과 추적: 추적 레코드 {counts['performance_trackers']}건",
         "",
         "## 직급별 담당",
@@ -643,6 +739,13 @@ def render_report(summary: dict, roster: dict[str, dict]) -> str:
     else:
         for item in approvals:
             lines.append(f"- {item['opportunity_id']} / {item['product_name']}: {item['summary']}")
+    lines.extend(["", "## Client Ops handoff 발행", ""])
+    handoffs = summary.get("commerce_to_client_ops_handoffs", [])
+    if not handoffs:
+        lines.append("- 없음")
+    else:
+        for item in handoffs:
+            lines.append(f"- {item['opportunity_id']} / {item['signal_type']} / {', '.join(item['channels'])}: {item['path']}")
     lines.extend(["", "## 상품별 결과", ""])
     for item in summary["opportunities"]:
         risk = item["risk"]
@@ -686,9 +789,10 @@ def run() -> dict:
         rows = stage_3_risk_filter(con, run_id, rows)
         rows = stage_4_listing_creation(con, run_id, rows)
         rows = stage_5_channel_packages(con, run_id, rows)
+        channel_handoffs = emit_channel_submission_handoffs(run_id, rows)
         rows = stage_6_performance_tracking(con, run_id, rows)
         approvals = create_approval_queue(con, run_id, rows)
-        summary = summarize(run_id, rows, approvals)
+        summary = summarize(run_id, rows, approvals, channel_handoffs)
         insert_json(
             con,
             "pipeline_runs",
@@ -727,6 +831,7 @@ def main() -> int:
         print(f"Generated growth run: {summary['run_id']}")
         print(f"Approval required: {counts['approval_required']}")
         print(f"Risk blocked: {counts['risk_blocked']}")
+        print(f"Client Ops handoffs: {counts['commerce_to_client_ops_handoffs']}")
         print(f"Report: {LATEST_REPORT}")
         print(f"DB: {DB_PATH}")
     return 0

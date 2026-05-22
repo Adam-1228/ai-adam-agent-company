@@ -24,6 +24,7 @@ RUNS = WORKFORCE / "runs"
 RUNTIME = ROOT / "runtime"
 LLM_USAGE_LOG = RUNTIME / "llm_usage.jsonl"
 CLIENT_OPS_HANDOFFS = RUNTIME / "client_ops_handoffs"
+COMMERCE_TO_CLIENT_OPS_HANDOFFS = RUNTIME / "commerce_to_client_ops_handoffs"
 CLIENT_OPS_LOGS = CLIENT_OPS_ROOT / "logs"
 APPROVALS_PATH = RUNTIME / "approval_decisions.json"
 APPROVAL_LOG = RUNTIME / "approval_log.jsonl"
@@ -262,11 +263,14 @@ def llm_usage_summary() -> dict[str, str]:
 
 
 def handoff_summary() -> dict[str, str]:
-    if not CLIENT_OPS_HANDOFFS.exists():
-        return {"received": "0", "task_log": "없음"}
-    received = len([p for p in CLIENT_OPS_HANDOFFS.glob("*.json") if p.is_file()])
+    received = len([p for p in CLIENT_OPS_HANDOFFS.glob("*.json") if p.is_file()]) if CLIENT_OPS_HANDOFFS.exists() else 0
+    sent = (
+        len([p for p in COMMERCE_TO_CLIENT_OPS_HANDOFFS.glob("*.json") if p.is_file()])
+        if COMMERCE_TO_CLIENT_OPS_HANDOFFS.exists()
+        else 0
+    )
     task_log = "있음" if (CLIENT_OPS_HANDOFFS / "commerce_tasks.md").exists() else "없음"
-    return {"received": str(received), "task_log": task_log}
+    return {"received": str(received), "sent": str(sent), "task_log": task_log}
 
 
 def client_ops_log_events() -> list[dict]:
@@ -848,6 +852,7 @@ def render_health_panel() -> str:
         <div class="kv"><span>저장된 실행</span><strong>{run_count}</strong></div>
         <div class="kv"><span>Client Ops 로그</span><strong>{client_log_count}</strong></div>
         <div class="kv"><span>수신 handoff</span><strong>{html.escape(handoff["received"])}</strong></div>
+        <div class="kv"><span>발행 handoff</span><strong>{html.escape(handoff["sent"])}</strong></div>
         <div class="kv"><span>handoff 작업 로그</span><strong>{html.escape(handoff["task_log"])}</strong></div>
         <div class="kv"><span>디스크 사용률</span><strong>{html.escape(disk["used_pct"])}</strong></div>
         <div class="kv"><span>남은 디스크</span><strong>{html.escape(disk["free_gb"])}</strong></div>
@@ -1958,7 +1963,7 @@ def render_client_room() -> str:
         <div class="office-status">
           <strong>외부 팀 handoff</strong>
           <span>commerce 팀으로 넘기는 검수 입구</span>
-          <span>수신 {html.escape(handoff["received"])}건 · 작업 로그 {html.escape(handoff["task_log"])}</span>
+          <span>수신 {html.escape(handoff["received"])}건 · 발행 {html.escape(handoff["sent"])}건 · 작업 로그 {html.escape(handoff["task_log"])}</span>
         </div>
         <div class="office-desk">
           <div class="monitor"></div>
@@ -2336,6 +2341,7 @@ def render_growth_pipeline() -> str:
         <section class="decision-card"><h2>공급처 검증</h2><div class="metric">{html.escape(str(counts.get("supplier_checked", 0)))}</div><p class="muted">증빙 필요 {html.escape(str(counts.get("supplier_evidence_needed", 0)))}</p></section>
         <section class="decision-card"><h2>리스크 차단</h2><div class="metric">{html.escape(str(counts.get("risk_blocked", 0)))}</div><p class="muted">정책/IP/인증 차단</p></section>
         <section class="decision-card"><h2>채널 패키지</h2><div class="metric">{html.escape(str(counts.get("channel_packages", 0)))}</div><p class="muted">게시 전 초안</p></section>
+        <section class="decision-card"><h2>Client Ops handoff</h2><div class="metric">{html.escape(str(counts.get("commerce_to_client_ops_handoffs", 0)))}</div><p class="muted">QA 검수 요청</p></section>
       </section>
       <section class="panels">
         <section>

@@ -35,6 +35,7 @@ CONFIG_PATH = ROOT / "config" / "agent_models.json"
 ENV_EXAMPLE = ROOT / ".env.example"
 ROOT_GITIGNORE = REPO_ROOT / ".gitignore"
 DEFAULT_OUTPUT_DIR = ROOT / "reports"
+CONTRACT_DOC = REPO_ROOT / "shared" / "handoff_contracts" / "commerce_client_ops_contract.md"
 
 
 PASS = "PASS"
@@ -685,6 +686,25 @@ def section_13_seller_readiness() -> list[CheckResult]:
             out.append(CheckResult(
                 "§13.3", "commerce_integration.md 4신호 정의", PASS,
                 detail=f"{len(must_signals)}/{len(must_signals)} signals",
+            ))
+
+    # 13.3b root canonical contract has accepted the v2 signal set.
+    if not CONTRACT_DOC.exists():
+        out.append(CheckResult("§13.3b", "canonical handoff contract v2", FAIL,
+                               detail=f"missing file: {CONTRACT_DOC.relative_to(REPO_ROOT)}"))
+    else:
+        contract_text = CONTRACT_DOC.read_text(encoding="utf-8")
+        missing = [s for s in must_signals if s not in contract_text]
+        if "2026-05-22.v2" not in contract_text or missing:
+            out.append(CheckResult(
+                "§13.3b", "canonical handoff contract v2", FAIL,
+                detail=f"version_or_signals_missing: version={'2026-05-22.v2' in contract_text}, missing={missing}",
+                fix_hint="shared/handoff_contracts/commerce_client_ops_contract.md를 v2 canonical로 갱신",
+            ))
+        else:
+            out.append(CheckResult(
+                "§13.3b", "canonical handoff contract v2", PASS,
+                detail="2026-05-22.v2 + 4 channel signals present",
             ))
 
     # 13.4 Sensitive-value grep across the client-ops tree.
