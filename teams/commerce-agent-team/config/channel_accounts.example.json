@@ -1,0 +1,42 @@
+{
+  "version": "2026-05-22",
+  "notes": "Public-safe template only. Copy to channel_accounts.local.json on the server and keep all real account details out of git.",
+  "global": {
+    "business_registration_ready": false,
+    "settlement_bank_ready": false,
+    "return_address_ready": false,
+    "cs_contact_ready": false,
+    "privacy_policy_ready": false,
+    "shipping_policy_ready": false,
+    "adam_final_approval_required": true
+  },
+  "channels": {
+    "coupang": {
+      "seller_account_created": false,
+      "wing_login_verified": false,
+      "business_profile_verified": false,
+      "settlement_profile_ready": false,
+      "return_address_ready": false,
+      "shipping_policy_ready": false,
+      "cs_contact_ready": false,
+      "api_access_requested": false,
+      "api_keys_stored_in_env": false,
+      "draft_submission_only": true,
+      "notes": "Coupang Open API credentials must be stored in .env or system environment, never in this JSON file."
+    },
+    "amazon": {
+      "seller_account_created": false,
+      "seller_central_login_verified": false,
+      "business_profile_verified": false,
+      "settlement_profile_ready": false,
+      "return_address_ready": false,
+      "shipping_policy_ready": false,
+      "cs_contact_ready": false,
+      "sp_api_developer_profile_ready": false,
+      "sp_api_app_authorized": false,
+      "api_keys_stored_in_env": false,
+      "validation_preview_only": true,
+      "notes": "Amazon SP-API credentials must be stored in .env or system environment, never in this JSON file."
+    }
+  }
+}

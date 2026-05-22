@@ -29,7 +29,13 @@ def main() -> int:
     rc = run_command(first)
     if rc != 0:
         return rc
-    return run_command([python, "scripts/commerce_growth_pipeline.py"])
+    rc = run_command([python, "scripts/commerce_growth_pipeline.py"])
+    if rc != 0:
+        return rc
+    rc = run_command([python, "scripts/check_channel_readiness.py"])
+    if rc != 0:
+        return rc
+    return run_command([python, "scripts/validate_channel_submissions.py"])
 
 
 if __name__ == "__main__":

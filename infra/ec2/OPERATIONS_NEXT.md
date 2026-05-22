@@ -210,6 +210,15 @@ It runs the legacy five-agent report and then the six-stage growth pipeline:
 
 Live publishing is not automatic. Channel packages stop at `adam_approval_required`.
 
+Before seller account/API connection, the cycle also runs:
+
+```text
+scripts/check_channel_readiness.py
+scripts/validate_channel_submissions.py
+```
+
+`check_channel_readiness.py` is allowed to return `not_ready` while seller signup is in progress. It writes a report but does not fail the service unless `--strict` is used manually. `validate_channel_submissions.py` must pass because it checks that generated Coupang/Amazon packages are still dry-run only and contain no secret-like fields.
+
 Install or refresh the morning timer on EC2:
 
 ```bash
@@ -235,4 +244,13 @@ Growth pipeline artifacts:
 ```bash
 cat /opt/ai-adam-agent-company/teams/commerce-agent-team/runtime/growth_pipeline/latest.json
 cat /opt/ai-adam-agent-company/teams/commerce-agent-team/reports/latest_growth_pipeline.md
+```
+
+Channel preparation artifacts:
+
+```bash
+cat /opt/ai-adam-agent-company/teams/commerce-agent-team/runtime/channel_readiness/latest.json
+cat /opt/ai-adam-agent-company/teams/commerce-agent-team/runtime/channel_submissions/latest_validation.json
+cat /opt/ai-adam-agent-company/teams/commerce-agent-team/reports/latest_channel_readiness.md
+cat /opt/ai-adam-agent-company/teams/commerce-agent-team/reports/latest_channel_validation.md
 ```

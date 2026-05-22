@@ -33,6 +33,10 @@ GROWTH_PIPELINE_SUMMARY = RUNTIME / "growth_pipeline" / "latest.json"
 GROWTH_PIPELINE_REPORT = REPORTS / "latest_growth_pipeline.md"
 PIPELINE_APPROVALS_PATH = RUNTIME / "growth_pipeline_approval_decisions.json"
 PIPELINE_APPROVAL_LOG = RUNTIME / "growth_pipeline_approval_log.jsonl"
+CHANNEL_READINESS_SUMMARY = RUNTIME / "channel_readiness" / "latest.json"
+CHANNEL_READINESS_REPORT = REPORTS / "latest_channel_readiness.md"
+CHANNEL_VALIDATION_SUMMARY = RUNTIME / "channel_submissions" / "latest_validation.json"
+CHANNEL_VALIDATION_REPORT = REPORTS / "latest_channel_validation.md"
 
 COMMERCE_AGENTS = [
     ("01_market_scout", "시장 탐색가", "상품 기회 발굴", "수요 신호와 카테고리 후보를 찾습니다."),
@@ -584,6 +588,62 @@ def render_growth_summary_cards() -> str:
     """
 
 
+def channel_readiness_summary() -> dict:
+    return read_json_file(
+        CHANNEL_READINESS_SUMMARY,
+        {
+            "created_at": "아직 점검 기록이 없습니다.",
+            "status": "not_started",
+            "config_source": "none",
+            "blocking_count": 0,
+            "channels": {},
+            "checks": [],
+        },
+    )
+
+
+def channel_validation_summary() -> dict:
+    return read_json_file(
+        CHANNEL_VALIDATION_SUMMARY,
+        {
+            "created_at": "아직 검증 기록이 없습니다.",
+            "status": "not_started",
+            "growth_run_id": "none",
+            "submission_count": 0,
+            "blocking": 0,
+            "warn": 0,
+            "info": 0,
+            "findings": [],
+        },
+    )
+
+
+def render_channel_summary_cards() -> str:
+    readiness = channel_readiness_summary()
+    validation = channel_validation_summary()
+    readiness_tone = "good" if readiness.get("status") == "ready" else ("danger" if readiness.get("status") == "unsafe_config" else "warn")
+    validation_tone = "good" if validation.get("status") == "valid" else ("danger" if validation.get("status") == "invalid" else "warn")
+    return f"""
+      <section class="decision-cards">
+        <a class="decision-card" href="/channel-ops">
+          <h2>판매자 계정 준비</h2>
+          <div class="metric decision-status">{html.escape(str(readiness.get("status", "not_started")))}</div>
+          <p class="muted">설정: {html.escape(str(readiness.get("config_source", "none")))} / 미완료 {html.escape(str(readiness.get("blocking_count", 0)))}</p>
+        </a>
+        <a class="decision-card" href="/channel-ops">
+          <h2>채널 Dry-run</h2>
+          <div class="metric decision-status">{html.escape(str(validation.get("status", "not_started")))}</div>
+          <p class="muted">패키지 {html.escape(str(validation.get("submission_count", 0)))}개 / BLOCK {html.escape(str(validation.get("blocking", 0)))}</p>
+        </a>
+        <a class="decision-card" href="/channel-ops">
+          <h2>라이브 게시</h2>
+          <div class="metric decision-status">잠금</div>
+          <p class="muted">Adam 승인과 API 키 연결 전에는 실제 게시하지 않습니다.</p>
+        </a>
+      </section>
+    """
+
+
 def render_approval_summary_cards(latest_run: Path | None, latest_meta: dict) -> str:
     run_id = str(latest_meta.get("run_id", latest_run.name if latest_run else ""))
     decision = approval_for_run(run_id) if run_id else {}
@@ -1077,6 +1137,23 @@ def html_page(title: str, body: str) -> str:
     .opinion-card p {{
       margin: 0 0 8px;
       font-size: 13px;
+    }}
+    .data-table {{
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }}
+    .data-table th,
+    .data-table td {{
+      border-bottom: 1px solid var(--line);
+      padding: 8px 6px;
+      text-align: left;
+      vertical-align: top;
+    }}
+    .data-table th {{
+      color: var(--muted);
+      font-weight: 700;
+      background: #f8fafc;
     }}
     .muted {{
       color: var(--muted);
@@ -1824,6 +1901,7 @@ def html_page(title: str, body: str) -> str:
     <div class="wrap topbar">
       <h1>{html.escape(title)}</h1>
       <nav>
+        <a href="/channel-ops">판매 채널 준비</a>
         <a href="/growth-pipeline">6단계 파이프라인</a>
         <a href="/org">직원 직제</a>
         <a href="/">대시보드</a>
@@ -2012,6 +2090,7 @@ def render_dashboard() -> str:
     approval_cards = render_approval_summary_cards(latest_run, latest_meta)
     approval_panel = render_approval_panel(latest_run, latest_meta)
     growth_cards = render_growth_summary_cards()
+    channel_cards = render_channel_summary_cards()
 
     body = f"""
       <section class="grid">
@@ -2032,6 +2111,7 @@ def render_dashboard() -> str:
         </section>
       </section>
       {growth_cards}
+      {channel_cards}
       {render_team_section("client_ops", CLIENT_OPS_AGENTS, latest_run)}
       {render_team_section("commerce", COMMERCE_AGENTS, latest_run)}
       {approval_cards}
@@ -2270,6 +2350,84 @@ def render_growth_pipeline() -> str:
     return html_page("6단계 파이프라인", body)
 
 
+def render_channel_ops() -> str:
+    readiness = channel_readiness_summary()
+    validation = channel_validation_summary()
+    readiness_report = read_text(CHANNEL_READINESS_REPORT, "아직 판매자 계정 준비 점검 보고서가 없습니다.")
+    validation_report = read_text(CHANNEL_VALIDATION_REPORT, "아직 채널 제출 dry-run 검증 보고서가 없습니다.")
+    channels = readiness.get("channels", {})
+    channel_rows = []
+    for channel, result in channels.items():
+        ready = "READY" if result.get("ready") else "NOT READY"
+        channel_rows.append(f'<div class="kv"><span>{html.escape(str(channel))}</span><strong>{html.escape(ready)}</strong></div>')
+    if not channel_rows:
+        channel_rows.append('<p class="muted">아직 채널 준비 점검 기록이 없습니다.</p>')
+
+    findings = validation.get("findings", [])
+    finding_rows = []
+    for finding in findings[:12]:
+        finding_rows.append(
+            f"""
+            <tr>
+              <td>{html.escape(str(finding.get("channel", "")))}</td>
+              <td>{html.escape(str(finding.get("opportunity_id", "")))}</td>
+              <td>{html.escape(str(finding.get("severity", "")))}</td>
+              <td>{html.escape(str(finding.get("message", "")))}</td>
+            </tr>
+            """
+        )
+    if not finding_rows:
+        finding_rows.append('<tr><td colspan="4">검증 기록이 없습니다.</td></tr>')
+
+    body = f"""
+      <section class="office-hero">
+        <h2>판매 채널 준비 센터</h2>
+        <p class="muted">판매자 가입과 API 연결 전까지 계정 준비 상태와 쿠팡/아마존 제출 패키지를 dry-run으로 점검합니다.</p>
+      </section>
+      <section class="decision-cards">
+        <section class="decision-card">
+          <h2>계정 준비 상태</h2>
+          <div class="metric decision-status">{html.escape(str(readiness.get("status", "not_started")))}</div>
+          <p class="muted">{html.escape(str(readiness.get("created_at", "")))}</p>
+        </section>
+        <section class="decision-card">
+          <h2>Dry-run 검증</h2>
+          <div class="metric decision-status">{html.escape(str(validation.get("status", "not_started")))}</div>
+          <p class="muted">BLOCK {html.escape(str(validation.get("blocking", 0)))} / WARN {html.escape(str(validation.get("warn", 0)))}</p>
+        </section>
+        <section class="decision-card">
+          <h2>검증 패키지</h2>
+          <div class="metric">{html.escape(str(validation.get("submission_count", 0)))}</div>
+          <p class="muted">외부 API 호출 없이 로컬 구조만 검사합니다.</p>
+        </section>
+      </section>
+      <section class="panels">
+        <aside class="side-stack">
+          <section class="panel">
+            <h2>채널별 준비</h2>
+            {''.join(channel_rows)}
+          </section>
+          <section class="panel">
+            <h2>최근 검증 결과</h2>
+            <table class="data-table">
+              <thead><tr><th>채널</th><th>상품</th><th>등급</th><th>내용</th></tr></thead>
+              <tbody>{''.join(finding_rows)}</tbody>
+            </table>
+          </section>
+        </aside>
+        <section class="panel">
+          <h2>계정 준비 보고서</h2>
+          <pre>{html.escape(readiness_report)}</pre>
+        </section>
+        <section class="panel">
+          <h2>Dry-run 검증 보고서</h2>
+          <pre>{html.escape(validation_report)}</pre>
+        </section>
+      </section>
+    """
+    return html_page("판매 채널 준비 센터", body)
+
+
 def render_report() -> str:
     report = read_text(REPORTS / "latest_agent_run.md", "최신 에이전트 보고서를 찾지 못했습니다.")
     body = f'<section class="panel"><h2>최신 보고서</h2><pre>{html.escape(report)}</pre></section>'
@@ -2357,6 +2515,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/":
             content = render_dashboard()
+        elif parsed.path == "/channel-ops":
+            content = render_channel_ops()
         elif parsed.path == "/growth-pipeline":
             content = render_growth_pipeline()
         elif parsed.path == "/org":
