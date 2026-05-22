@@ -553,6 +553,233 @@ def section_12_signoff() -> list[CheckResult]:
 
 
 # =========================================================================
+# Section 13 — 판매자 계정/채널 준비 (Seller Account Readiness)
+# =========================================================================
+
+# Sensitive value shapes that must NEVER appear in tracked files under
+# teams/client-ops-team/ (config/, shared/, agents/, scripts/, tasks/).
+# The script reports counts only — never the matching content.
+SENSITIVE_PATTERNS_13: list[tuple[str, re.Pattern[str]]] = [
+    ("KR_BUSINESS_REG_NO", re.compile(r"\b\d{3}-\d{2}-\d{5}\b")),
+    ("KR_RESIDENT_NO", re.compile(r"\b\d{6}-\d{7}\b")),
+    ("KR_BANK_ACCT", re.compile(r"\b\d{3}-\d{6}-\d{2,5}\b")),
+    # Card formats: 13-19 consecutive digits OR canonical 4-4-4-4 grouping.
+    # Avoids false-positives on date-suffixed IDs like "msg-2026-05-21-00231".
+    ("CARD_NUMBER", re.compile(r"\b(?:\d{13,19}|\d{4}[ -]\d{4}[ -]\d{4}[ -]\d{3,4})\b")),
+    ("US_DUNS", re.compile(r"\bDUNS[: ]\d{9}\b", re.IGNORECASE)),
+    ("AWS_ACCESS_KEY", re.compile(r"AKIA[0-9A-Z]{16}")),
+    ("AMAZON_REFRESH_TOKEN", re.compile(r"Atzr\|[A-Za-z0-9_\-]{20,}")),
+    ("COUPANG_VENDOR_ID", re.compile(r"\bA\d{8,12}\b")),
+]
+
+# Channel API key env-var NAMES we expect (existence check only — values are
+# never read or printed by this script).
+CHANNEL_KEY_VARS = [
+    "COUPANG_VENDOR_ID",
+    "COUPANG_ACCESS_KEY",
+    "COUPANG_SECRET_KEY",
+    "AMAZON_SELLER_ID",
+    "AMAZON_MARKETPLACE_ID",
+    "AMAZON_SP_API_REFRESH_TOKEN",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+]
+
+
+def _scan_for_sensitive(root_dir: Path, skip_dirs: set[str]) -> dict[str, int]:
+    """Return {pattern_name: hit_count}. Never returns the matched strings."""
+    counts: dict[str, int] = {name: 0 for name, _ in SENSITIVE_PATTERNS_13}
+    for path in root_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        if any(seg in path.parts for seg in skip_dirs):
+            continue
+        if path.suffix in {".pyc", ".lock"}:
+            continue
+        if path.name in {".gitkeep", "channel_accounts.json"}:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for name, pat in SENSITIVE_PATTERNS_13:
+            if pat.search(text):
+                counts[name] += 1
+    return counts
+
+
+def section_13_seller_readiness() -> list[CheckResult]:
+    out: list[CheckResult] = []
+    seller_doc = SHARED_DIR / "seller_account_readiness.md"
+    sop_doc = SHARED_DIR / "channel_ops_sop.md"
+    integration_doc = SHARED_DIR / "commerce_integration.md"
+
+    # 13.1 seller_account_readiness.md exists + has core sections
+    must_in_seller = [
+        "공통 준비 항목",
+        "사업자",
+        "정산",
+        "반품지",
+        "CS 연락처",
+        "API 키 발급",
+        "절대 커밋 금지",
+    ]
+    if not seller_doc.exists():
+        out.append(CheckResult(
+            "§13.1", "seller_account_readiness.md 존재", FAIL,
+            detail=f"missing file: {seller_doc.relative_to(ROOT)}",
+            fix_hint="shared/seller_account_readiness.md 작성 (본 PR에 포함)",
+        ))
+    else:
+        text = seller_doc.read_text(encoding="utf-8")
+        missing = [m for m in must_in_seller if m not in text]
+        if missing:
+            out.append(CheckResult(
+                "§13.1", "seller_account_readiness.md 핵심 섹션", FAIL,
+                detail=f"missing markers: {missing}",
+            ))
+        else:
+            out.append(CheckResult("§13.1", "seller_account_readiness.md 핵심 섹션", PASS))
+
+    # 13.2 channel_ops_sop.md exists + has core sections
+    must_in_sop = [
+        "게시 전 Adam 승인",
+        "환불",
+        "반품",
+        "P0",
+        "channel_submission",
+        "검수",
+    ]
+    if not sop_doc.exists():
+        out.append(CheckResult("§13.2", "channel_ops_sop.md 존재", FAIL))
+    else:
+        text = sop_doc.read_text(encoding="utf-8")
+        missing = [m for m in must_in_sop if m not in text]
+        if missing:
+            out.append(CheckResult(
+                "§13.2", "channel_ops_sop.md 핵심 섹션", FAIL,
+                detail=f"missing markers: {missing}",
+            ))
+        else:
+            out.append(CheckResult("§13.2", "channel_ops_sop.md 핵심 섹션", PASS))
+
+    # 13.3 4 new signal types are defined in commerce_integration.md
+    must_signals = [
+        "channel_submission_ready",
+        "seller_account_blocker",
+        "post_publish_monitoring_request",
+        "refund_or_claim_escalation",
+    ]
+    if not integration_doc.exists():
+        out.append(CheckResult("§13.3", "commerce_integration.md 4신호 정의", FAIL))
+    else:
+        text = integration_doc.read_text(encoding="utf-8")
+        missing = [s for s in must_signals if s not in text]
+        if missing:
+            out.append(CheckResult(
+                "§13.3", "commerce_integration.md 4신호 정의", FAIL,
+                detail=f"missing signals: {missing}",
+                fix_hint="commerce_integration.md '채널 운영 신호' 섹션 추가",
+            ))
+        else:
+            out.append(CheckResult(
+                "§13.3", "commerce_integration.md 4신호 정의", PASS,
+                detail=f"{len(must_signals)}/{len(must_signals)} signals",
+            ))
+
+    # 13.4 Sensitive-value grep across the client-ops tree.
+    # Never prints matched content — only pattern names and counts.
+    skip_dirs = {"runtime", "reports", "logs", "__pycache__"}
+    counts = _scan_for_sensitive(ROOT, skip_dirs)
+    nonzero = {k: v for k, v in counts.items() if v > 0}
+    if nonzero:
+        out.append(CheckResult(
+            "§13.4", "민감정보 패턴 grep", FAIL,
+            detail=f"sensitive pattern hits (counts only): {nonzero}",
+            fix_hint="해당 파일에서 값 제거 후 재커밋. 키는 즉시 로테이션. (본 스크립트는 매치된 문자열을 출력하지 않음)",
+        ))
+    else:
+        out.append(CheckResult(
+            "§13.4", "민감정보 패턴 grep", PASS,
+            detail=f"scanned {len(SENSITIVE_PATTERNS_13)} pattern types, all 0 hits",
+        ))
+
+    # 13.5 Channel API key env-var existence (NOT values).
+    # Reports presence/absence only — never reads the value.
+    load_dotenv()
+    set_vars = [v for v in CHANNEL_KEY_VARS if os.environ.get(v, "").strip()]
+    unset_vars = [v for v in CHANNEL_KEY_VARS if not os.environ.get(v, "").strip()]
+    if set_vars and unset_vars:
+        out.append(CheckResult(
+            "§13.5", "채널 API 키 env 존재", WARN,
+            detail=f"partial: set={len(set_vars)} unset={len(unset_vars)} "
+                   f"(값은 출력하지 않음; 변수명 목록은 코드의 CHANNEL_KEY_VARS 참조)",
+        ))
+    elif set_vars and not unset_vars:
+        out.append(CheckResult(
+            "§13.5", "채널 API 키 env 존재 (전부 설정됨)", PASS,
+            detail=f"all {len(CHANNEL_KEY_VARS)} channel env vars present (values never inspected)",
+        ))
+    else:
+        out.append(CheckResult(
+            "§13.5", "채널 API 키 env 존재", SKIP_MANUAL,
+            detail=f"channel keys not set yet — expected before APPROVE_AND_GO_LIVE. "
+                   f"unset count: {len(unset_vars)} (값은 출력하지 않음)",
+        ))
+
+    # 13.6 .env.example must list channel key names (placeholders only)
+    env_example = ENV_EXAMPLE.read_text(encoding="utf-8") if ENV_EXAMPLE.exists() else ""
+    if not env_example:
+        out.append(CheckResult("§13.6", ".env.example 채널 키 placeholder", WARN,
+                               detail=".env.example 누락"))
+    else:
+        # Accept either explicit names or a comment block; we just check at least
+        # one channel variable name is listed so operators know what to fill.
+        placeholders_found = [v for v in CHANNEL_KEY_VARS if v in env_example]
+        if placeholders_found:
+            out.append(CheckResult(
+                "§13.6", ".env.example 채널 키 placeholder", PASS,
+                detail=f"{len(placeholders_found)}/{len(CHANNEL_KEY_VARS)} listed",
+            ))
+        else:
+            out.append(CheckResult(
+                "§13.6", ".env.example 채널 키 placeholder", WARN,
+                detail="채널 가입 후 .env.example에 키 변수명만 추가 권고 (값 없이)",
+            ))
+
+    # 13.7 Sensitive config file is gitignored
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "check-ignore", "-v",
+             "teams/client-ops-team/config/channel_accounts.json"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0:
+            out.append(CheckResult(
+                "§13.7", "channel_accounts.json gitignore 보호", PASS,
+                detail=result.stdout.strip().split("\t")[0] if result.stdout else "",
+            ))
+        else:
+            out.append(CheckResult(
+                "§13.7", "channel_accounts.json gitignore 보호", FAIL,
+                detail="루트 .gitignore에 teams/*/config/channel_accounts.json 추가 필요",
+            ))
+    except Exception as exc:
+        out.append(CheckResult("§13.7", "channel_accounts.json gitignore 보호", WARN, detail=str(exc)))
+
+    # 13.8–13.11 — operator-only items
+    out.append(CheckResult("§13.8", "실 셀러 계정 가입", SKIP_MANUAL,
+                           detail="Coupang WING / Amazon Seller Central 가입은 Adam 직접"))
+    out.append(CheckResult("§13.9", "실 API 키 발급 + 권한 최소화", SKIP_MANUAL,
+                           detail="Adam이 EC2 .env에 직접 입력. 본 스크립트는 값을 출력하지 않음"))
+    out.append(CheckResult("§13.10", "정산 계좌 / 사업자 인증 / VAT", SKIP_MANUAL,
+                           detail="외부 secure storage. 본 저장소 커밋 절대 금지"))
+    out.append(CheckResult("§13.11", "Adam의 첫 APPROVE_AND_GO_LIVE", SKIP_MANUAL,
+                           detail="channel_ops_sop.md §1.3 — Adam 직접 결정"))
+    return out
+
+
+# =========================================================================
 # Dispatcher
 # =========================================================================
 
@@ -569,6 +796,7 @@ SECTIONS: dict[int, tuple[str, Callable[[], list[CheckResult]]]] = {
     10: ("백업/복구", section_10_recovery),
     11: ("사람 운영 준비", section_11_human_ops),
     12: ("최종 승인", section_12_signoff),
+    13: ("판매자 계정 / 채널 준비", section_13_seller_readiness),
 }
 
 
